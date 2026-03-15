@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "immersive-rag"
+version = "0.1.0"
+description = "Self-hosted multimodal RAG backend for grounded document QA."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "llama-index-core>=0.12,<0.13",
+  "llama-index-vector-stores-qdrant>=0.4,<0.5",
+  "llama-parse>=0.6.94,<0.7",
+  "openai>=1.0,<2.0",
+  "pdfplumber>=0.11,<1.0",
+  "pydantic>=2.8,<3.0",
+  "pydantic-settings>=2.3,<3.0",
+  "pymupdf>=1.27,<2.0",
+  "pypdf>=6.0,<7.0",
+  "qdrant-client[fastembed]>=1.9,<2.0",
+  "uvicorn>=0.30,<1.0",
+  "python-multipart>=0.0.9,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0,<9.0",
+  "httpx>=0.27,<1.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

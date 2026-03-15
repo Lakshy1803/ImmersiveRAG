@@ -1,0 +1,23 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-8.4.2, pluggy-1.6.0 -- E:\Projects\ImmersiveRAG\backend\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: E:\Projects\ImmersiveRAG\backend
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.12.1, Faker-40.11.0
+collecting ... collected 12 items
+
+tests/test_generation.py::test_extractive_generation_deduplicates_repeated_text_evidence PASSED [  8%]
+tests/test_health.py::test_ready_endpoint_fails_for_missing_openai_generation_key PASSED [ 16%]
+tests/test_ingestion.py::test_health_endpoint_reports_active_stack PASSED [ 25%]
+tests/test_ingestion.py::test_ingest_pdf_and_complete_job PASSED         [ 33%]
+tests/test_ingestion.py::test_reject_unsupported_upload PASSED           [ 41%]
+tests/test_jobs.py::test_job_lookup_returns_persisted_state PASSED       [ 50%]
+tests/test_parsing.py::test_chunk_page_entries_preserves_heading_bbox_and_order PASSED [ 58%]
+tests/test_parsing.py::test_fallback_parser_uses_native_pdf_text_for_pdf PASSED [ 66%]
+tests/test_parsing.py::test_llamaparse_parser_builds_page_chunks_and_images PASSED [ 75%]
+tests/test_parsing.py::test_llamaparse_parser_falls_back_when_remote_parse_fails PASSED [ 83%]
+tests/test_retrieval.py::test_text_and_image_retrieval_pipeline PASSED   [ 91%]
+tests/test_retrieval.py::test_low_confidence_query_abstains PASSED       [100%]
+
+============================= 12 passed in 3.38s ==============================

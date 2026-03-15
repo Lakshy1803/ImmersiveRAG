@@ -1,0 +1,29 @@
+# Environments and Secrets
+backend/.env
+backend/.venv/
+
+# Python Cache & Build
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+backend/immersive_rag.egg-info/
+backend/.pytest_cache/
+
+# Application Data & Temp
+backend/data/
+backend/.tmp_data/
+backend/.llamaparse_images/
+backend/.e2e_runtime/
+backend/.e2e_runtime_design/
+
+# User & Testing Data
+.final_pdf_check/
+.user_pdf_test/
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
