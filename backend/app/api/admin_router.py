@@ -181,9 +181,10 @@ async def purge_all_vectors():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to reinitialize Qdrant collections: {e}")
 
-    # 4. Wipe all SQLite state: jobs, session caches, and session records
+    # 4. Wipe all SQLite state: jobs, session caches, session records, and conversation history
     with get_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute("DELETE FROM conversation_messages")
         cursor.execute("DELETE FROM session_context_cache")
         cursor.execute("DELETE FROM agent_sessions")
         cursor.execute("DELETE FROM ingestion_jobs")

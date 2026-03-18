@@ -9,6 +9,7 @@ import { ChunkNode } from "@/lib/api";
 
 export default function Home() {
   const [extractedContext, setExtractedContext] = useState<ChunkNode[]>([]);
+  const [activeAgentId, setActiveAgentId] = useState("doc_analyzer");
 
   return (
     <div className="min-h-screen bg-surface flex flex-col">
@@ -16,15 +17,15 @@ export default function Home() {
       
       <div className="flex flex-1 relative overflow-hidden">
         {/* Left Navigation */}
-        <SidebarLeft />
+        <SidebarLeft activeAgentId={activeAgentId} onAgentChange={setActiveAgentId} />
 
         {/* Main Canvas */}
         <main className="lg:ml-64 xl:mr-72 flex-1 min-h-screen pt-16 flex flex-col relative bg-surface">
           <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
-            <AgentChat onContextUpdate={setExtractedContext} />
+            <AgentChat activeAgentId={activeAgentId} onContextUpdate={setExtractedContext} />
           </div>
 
-          {/* Footer Label from sample */}
+          {/* Footer Label */}
           <div className="absolute bottom-6 left-0 w-full flex justify-center gap-8 pointer-events-none z-10">
             <span className="flex items-center gap-1.5 text-[10px] text-on-surface/20 font-semibold uppercase tracking-[0.15em]">
               AGENTIC AUTOMATION

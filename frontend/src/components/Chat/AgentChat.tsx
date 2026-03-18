@@ -1,7 +1,6 @@
 'use client';
 import React, { useState, useRef, useEffect } from 'react';
 import { ImmersiveRagAPI, ChunkNode } from '@/lib/api';
-import { Spinner } from '../ui/Spinner';
 
 interface ChatMessage {
   id: string;
@@ -12,28 +11,46 @@ interface ChatMessage {
 }
 
 interface AgentChatProps {
+  activeAgentId: string;
   onContextUpdate?: (chunks: ChunkNode[]) => void;
 }
 
-export function AgentChat({ onContextUpdate }: AgentChatProps) {
+export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([{
-     id: 'welcome',
-     role: 'agent',
-     content: 'Good morning, Executive. I have synchronized the local vector space. I am ready to deep-dive into your document repositories.'
+    id: 'welcome',
+    role: 'agent',
+    content: 'Good morning, Executive. I am ready to analyze your documents. Upload files via the right panel, then ask me anything.'
   }]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [sessionId, setSessionId] = useState('');
+  const [expandedChunks, setExpandedChunks] = useState<Set<string>>(new Set());
   const endRef = useRef<HTMLDivElement>(null);
 
-  const [sessionId, setSessionId] = useState('');
-
   useEffect(() => {
-    setSessionId(`sess_${Math.random().toString(36).substr(2, 6)}`);
+    setSessionId(`sess_${Math.random().toString(36).substr(2, 8)}`);
   }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Reset chat when agent changes
+  useEffect(() => {
+    setMessages([{
+      id: 'welcome',
+      role: 'agent',
+      content: 'Good morning, Executive. I am ready to analyze your documents. Upload files via the right panel, then ask me anything.'
+    }]);
+  }, [activeAgentId]);
+
+  const toggleChunks = (msgId: string) => {
+    setExpandedChunks(prev => {
+      const next = new Set(prev);
+      next.has(msgId) ? next.delete(msgId) : next.add(msgId);
+      return next;
+    });
+  };
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -45,37 +62,30 @@ export function AgentChat({ onContextUpdate }: AgentChatProps) {
     setIsLoading(true);
 
     try {
-       const res = await ImmersiveRagAPI.query(userMsg.content, sessionId, 'agent_demo_ui');
-       
-       if (res.extracted_context && res.extracted_context.length > 0) {
-          onContextUpdate?.(res.extracted_context);
-          const agentMsg: ChatMessage = {
-             id: (Date.now() + 1).toString(),
-             role: 'agent',
-             content: `I have retrieved ${res.extracted_context.length} relevant context shards within your token budget. Strategic analysis complete.`,
-             chunks: res.extracted_context,
-             cache_hit: res.cache_hit
-          };
-          setMessages(prev => [...prev, agentMsg]);
-       } else {
-         const emptyMsg: ChatMessage = {
-             id: (Date.now() + 1).toString(),
-             role: 'agent',
-             content: `No significant matches found in the local corporate knowledge layer.`,
-             cache_hit: res.cache_hit
-          };
-          setMessages(prev => [...prev, emptyMsg]);
-       }
+      const res = await ImmersiveRagAPI.chat(userMsg.content, activeAgentId, sessionId);
+
+      if (res.context_chunks?.length > 0) {
+        onContextUpdate?.(res.context_chunks);
+      }
+
+      const agentMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'agent',
+        content: res.answer,
+        chunks: res.context_chunks,
+        cache_hit: res.cache_hit,
+      };
+      setMessages(prev => [...prev, agentMsg]);
 
     } catch (err: unknown) {
-       const errMsg = err instanceof Error ? err.message : 'Connection failure in corporate network.';
-       setMessages(prev => [...prev, {
-         id: (Date.now() + 1).toString(),
-         role: 'agent',
-         content: `System Error: ${errMsg}`
-       }]);
+      const errMsg = err instanceof Error ? err.message : 'Connection failure.';
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: 'agent',
+        content: `System Error: ${errMsg}`
+      }]);
     } finally {
-       setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -90,25 +100,25 @@ export function AgentChat({ onContextUpdate }: AgentChatProps) {
                 <span className="material-symbols-outlined text-lg text-primary" style={{ fontVariationSettings: '"FILL" 1' }}>smart_toy</span>
               </div>
             )}
-            
+
             <div className={`space-y-2 max-w-[85%] flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
               {msg.cache_hit && (
                 <div className="flex items-center gap-1.5 text-[9px] uppercase font-bold text-primary tracking-[0.2em] mb-1 px-1">
-                   <span className="material-symbols-outlined text-[10px]">bolt</span> Cache Hit
+                  <span className="material-symbols-outlined text-[10px]">bolt</span> Cache Hit
                 </div>
               )}
-              
-              <div className={`p-6 rounded-2xl border border-outline-variant/20 leading-relaxed shadow-sm text-base ${
-                 msg.role === 'user' 
-                   ? 'bg-surface-container-highest rounded-tr-none' 
-                   : 'bg-surface-container-low rounded-tl-none'
-              }`}
-              >
+
+              {/* Message Bubble */}
+              <div className={`p-6 rounded-2xl border border-outline-variant/20 leading-relaxed shadow-sm text-sm ${
+                msg.role === 'user'
+                  ? 'bg-surface-container-highest rounded-tr-none'
+                  : 'bg-surface-container-low rounded-tl-none'
+              }`}>
                 {msg.content}
 
-                {/* Agent Action Placeholders from Sample */}
+                {/* Action buttons for agent messages */}
                 {msg.role === 'agent' && msg.id !== 'welcome' && (
-                  <div className="flex gap-2 mt-4">
+                  <div className="flex gap-2 mt-4 flex-wrap">
                     <button className="px-5 py-2 rounded-full bg-surface-container-high text-[9px] font-bold uppercase tracking-wider text-on-surface/50 hover:text-white hover:bg-primary border border-transparent transition-all shadow-sm">
                       Generate PDF Report
                     </button>
@@ -118,7 +128,42 @@ export function AgentChat({ onContextUpdate }: AgentChatProps) {
                   </div>
                 )}
               </div>
-              
+
+              {/* Collapsible Source Chunks */}
+              {msg.chunks && msg.chunks.length > 0 && (
+                <div className="w-full">
+                  <button
+                    onClick={() => toggleChunks(msg.id)}
+                    className="flex items-center gap-1.5 text-[10px] text-on-surface/40 hover:text-primary transition-colors px-1 font-semibold"
+                  >
+                    <span className="material-symbols-outlined text-[12px]">
+                      {expandedChunks.has(msg.id) ? 'expand_less' : 'expand_more'}
+                    </span>
+                    Sources ({msg.chunks.length})
+                  </button>
+
+                  {expandedChunks.has(msg.id) && (
+                    <div className="mt-2 space-y-2">
+                      {msg.chunks.map((chunk, idx) => (
+                        <div key={idx} className="p-3 bg-surface-container rounded-xl border border-outline-variant/20 text-[11px]">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-primary font-bold px-2 py-0.5 bg-primary/10 rounded-full text-[9px]">
+                              {(chunk.score * 100).toFixed(0)}% match
+                            </span>
+                            <span className="text-on-surface/30 font-mono text-[9px]">
+                              {chunk.chunk_id?.substring(0, 10)}
+                            </span>
+                          </div>
+                          <p className="text-on-surface/60 leading-relaxed italic">
+                            "{chunk.text.length > 150 ? chunk.text.substring(0, 150) + '...' : chunk.text}"
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <span className={`text-[10px] text-on-surface/30 px-1 font-mono uppercase tracking-widest ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
                 {msg.role === 'agent' ? 'Luminary' : 'Executive'} • {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
@@ -131,13 +176,14 @@ export function AgentChat({ onContextUpdate }: AgentChatProps) {
             )}
           </div>
         ))}
+
         {isLoading && (
-           <div className="flex items-start gap-4 animate-pulse">
-             <div className="w-10 h-10 rounded-xl bg-surface-container border border-outline-variant/30 flex-shrink-0" />
-             <div className="bg-surface-container-low py-4 px-6 rounded-2xl rounded-tl-none text-xs text-on-surface/30 w-48">
-               Processing retrieval metrics...
-             </div>
-           </div>
+          <div className="flex items-start gap-4 animate-pulse">
+            <div className="w-10 h-10 rounded-xl bg-surface-container border border-outline-variant/30 flex-shrink-0" />
+            <div className="bg-surface-container-low py-4 px-6 rounded-2xl rounded-tl-none text-xs text-on-surface/30 w-56">
+              Analyzing & generating response...
+            </div>
+          </div>
         )}
         <div ref={endRef} />
       </div>
@@ -149,21 +195,21 @@ export function AgentChat({ onContextUpdate }: AgentChatProps) {
             <button type="button" className="w-11 h-11 flex items-center justify-center text-on-surface/50 hover:text-primary transition-all ml-2">
               <span className="material-symbols-outlined">attach_file</span>
             </button>
-            <input 
+            <input
               suppressHydrationWarning
-              type="text" 
+              type="text"
               value={input}
               onChange={e => setInput(e.target.value)}
               disabled={isLoading}
-              placeholder="Ask Corporate Luminary anything..."
+              placeholder="Ask your agent anything..."
               className="flex-1 bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-on-surface/40 text-sm py-4"
               autoComplete="off"
             />
             <button type="button" className="w-11 h-11 flex items-center justify-center text-on-surface/50 hover:text-primary transition-all">
               <span className="material-symbols-outlined">mic</span>
             </button>
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               disabled={!input.trim() || isLoading}
               className="h-11 px-8 bg-primary rounded-full flex items-center justify-center text-white hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-primary/20 mr-1 disabled:opacity-50 disabled:grayscale"
             >

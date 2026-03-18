@@ -40,6 +40,10 @@ class AppConfig(BaseSettings):
     session_timeout_minutes: int = Field(default=30)
     sliding_window_size: int = Field(default=10, description="Max recent queries kept in session memory")
 
+    # Agent Generation Budget
+    llm_max_answer_tokens: int = Field(default=512, description="Max tokens for LLM answer generation")
+    history_summary_max_tokens: int = Field(default=256, description="Max tokens for rolling conversation summary")
+
     class Config:
         # Absolute path so .env is found regardless of where uvicorn is launched from
         env_file = str(_BACKEND_ROOT / ".env")
