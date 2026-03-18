@@ -48,17 +48,15 @@ class RetrievalOrchestrator:
             chunks = [ContextChunk(**c) for c in cached['chunks']]
             return chunks, cached['tokens_used'], True
 
-        # 2. Vector DB Query — cast a wider net for re-ranking
+        # 2. Vector DB Query
         from app.engine.ingestion.embedder import get_corporate_embeddings
-        from app.engine.retrieval.reranker import rerank
-
         query_vector = get_corporate_embeddings([query])[0]
 
         client = get_qdrant_client()
         search_result = client.query_points(
             collection_name="rag_text",
             query=query_vector,
-            limit=top_k_candidates  # Broad retrieval: 20 candidates
+            limit=top_k  # Direct retrieval: top_k (no re-ranking)
         )
 
         raw_results = []
@@ -76,12 +74,8 @@ class RetrievalOrchestrator:
                 )
             )
 
-        # 3. Cross-encoder re-rank: 20 candidates → top_k (5)
-        if len(raw_results) > top_k:
-            reranked = rerank(query, raw_results, top_n=top_k)
-            logger.info(f"Re-ranked {len(raw_results)} candidates → {len(reranked)} chunks")
-        else:
-            reranked = raw_results[:top_k]
+        # 3. No re-ranking in this version
+        reranked = raw_results
 
         # 4. Token Budgeting
         final_chunks = []
