@@ -24,14 +24,14 @@ Browser (localhost:3000)
 FastAPI (127.0.0.1:8000)
   ├── POST /admin/ingest          Ingestion pipeline → SQLite job queue
   ├── APScheduler (every 5s)     embedder.py → Qdrant vector store
-  ├── POST /agent/chat            LangGraph: retrieve → generate (Groq/OpenAI)
+  ├── POST /agent/chat/stream     SSE Streaming: retrieve → re-rank → generate (Groq/OpenAI)
   ├── GET  /agent/registry        Lists base + user-configured agents
   ├── POST /agent/configure       Clone & customize agents (saved to SQLite)
   └── DELETE /admin/debug/purge-vectors   Full wipe (Qdrant + SQLite)
 
 LangGraph Workflow (per chat message)
-  retrieve node → RetrievalOrchestrator → Qdrant → context chunks
-  generate node → ChatOpenAI (Groq/Azure/OpenAI) → LLM answer
+  retrieve node → Chunk Retrieval → Cross-Encoder Re-ranker (top-5)
+  generate node → StreamingResponse (SSE) → LLM answer tokens
 
 Memory (3 tiers)
   T1: session_context_cache   Turn-level dedup (SQLite)

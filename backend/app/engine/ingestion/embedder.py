@@ -42,6 +42,16 @@ def get_corporate_embeddings(texts: List[str], embedding_mode: str = "local_fast
     # If a custom base URL is provided (e.g. Azure, Local Proxy, etc.)
     if base_url:
         client_kwargs["base_url"] = base_url
+
+    # Handle SSL verification bypass if configured
+    if config.bypass_ssl_verify:
+        import httpx
+        import ssl
+        logger.warning("Bypassing SSL verification for OpenAI client as configured.")
+        # Monkey-patching SSL for libraries that might not respect httpx client
+        ssl._create_default_https_context = ssl._create_unverified_context
+        # Configure httpx client to skip verification
+        client_kwargs["http_client"] = httpx.Client(verify=False)
         
     client = OpenAI(**client_kwargs)
     

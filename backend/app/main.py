@@ -7,6 +7,13 @@ from app.api.admin_router import router as admin_router
 from app.api.agent_router import router as agent_router
 from app.core.scheduler import start_scheduler, stop_scheduler
 
+# Apply global SSL verification bypass if configured early
+if config.bypass_ssl_verify:
+    import ssl
+    import logging
+    logging.getLogger("app.main").warning("GLOBAL SSL VERIFICATION DISABLED via bypass_ssl_verify=True")
+    ssl._create_default_https_context = ssl._create_unverified_context
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     # Phase 5: Initialize the APScheduler here

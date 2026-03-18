@@ -29,6 +29,7 @@ def get_llm() -> ChatOpenAI:
         "model": config.llm_model,
         "max_tokens": config.llm_max_answer_tokens,
         "temperature": 0.3,  # Low temp for precise corporate answers
+        "streaming": True,   # Enable streaming for real-time token delivery
     }
 
     if config.llm_base_url:

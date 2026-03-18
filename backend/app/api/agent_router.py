@@ -1,6 +1,10 @@
 from fastapi import APIRouter, HTTPException
-from typing import List
+from fastapi.responses import StreamingResponse
+from fastapi.concurrency import run_in_threadpool
+from typing import List, AsyncGenerator
 from uuid import uuid4
+import json
+import asyncio
 
 from app.models.api_models import (
     AgentQueryRequest, AgentContextResponse, ContextChunk,
@@ -76,7 +80,98 @@ async def agent_chat(request: AgentChatRequest):
     )
 
 
-# ── Agent Registry ─────────────────────────────────────────────────────
+# ── Streaming Chat Endpoint (SSE) ────────────────────────────────────────────
+@router.post("/chat/stream")
+async def agent_chat_stream(request: AgentChatRequest):
+    """
+    Streaming variant of /agent/chat.
+    Returns Server-Sent Events:
+      - data: {"token": "..."} for each LLM token
+      - data: {"done": true, "context_chunks": [...], "cache_hit": bool} at the end
+    """
+    agent_def = _get_agent_definition(request.agent_id)
+    if not agent_def:
+        raise HTTPException(status_code=404, detail=f"Agent '{request.agent_id}' not found.")
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        try:
+            # Padding to force proxy flush (1KB)
+            yield ":" + " " * 1024 + "\n\n"
+            yield f"data: {json.dumps({'token': '[CONNECTED] '})}\n\n"
+            from app.engine.agents.conversation_memory import ConversationMemory
+            from app.engine.retrieval.orchestrator import RetrievalOrchestrator
+            from app.engine.agents.llm_client import get_llm
+            from langchain_core.messages import SystemMessage, HumanMessage
+
+            # Step 1: Retrieve context (blocking, run in threadpool to avoid loop block)
+            orchestrator = RetrievalOrchestrator(
+                agent_id=request.agent_id,
+                session_id=request.session_id
+            )
+            from app.core.config import config as app_config
+            
+            # Use run_in_threadpool so the yield [CONNECTED] can flush immediately
+            chunks, tokens_used, cache_hit = await run_in_threadpool(
+                orchestrator.retrieve,
+                query=request.question,
+                top_k=5,
+                max_tokens=app_config.max_context_tokens
+            )
+
+            # Step 2: Build prompt
+            memory = ConversationMemory(request.session_id, request.agent_id)
+            history_context = memory.build_history_context()
+
+            context_str = "No relevant documents found in the knowledge base."
+            if chunks:
+                context_str = "\n\n".join(
+                    f"[Chunk {i+1} | {c.score:.0%} match]\n{c.text}"
+                    for i, c in enumerate(chunks)
+                )
+
+            messages = [SystemMessage(content=agent_def["system_prompt"])]
+            if history_context:
+                messages.append(SystemMessage(content=f"Conversation history:\n{history_context}"))
+            messages.append(HumanMessage(
+                content=f"Context from knowledge base:\n{context_str}\n\nUser question: {request.question}"
+            ))
+
+            # Step 3: Stream tokens
+            llm = get_llm()
+            full_answer = ""
+            async for token_chunk in llm.astream(messages):
+                token = token_chunk.content
+                if token:
+                    full_answer += token
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                    await asyncio.sleep(0)  # Yield control
+
+            # Step 4: Persist conversation turn
+            memory.append_turn("user", request.question)
+            memory.append_turn("assistant", full_answer)
+            memory.maybe_refresh_summary()
+
+            # Step 5: Send final event with metadata
+            final_event = {
+                "done": True,
+                "context_chunks": [c.model_dump() for c in chunks],
+                "cache_hit": cache_hit,
+                "tokens_used": tokens_used,
+            }
+            yield f"data: {json.dumps(final_event)}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
 @router.get("/registry", response_model=List[AgentDefinition])
 async def list_agents():
     """Returns all available agents (base + user-configured)."""

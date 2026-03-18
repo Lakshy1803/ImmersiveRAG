@@ -44,6 +44,10 @@ class AppConfig(BaseSettings):
     llm_max_answer_tokens: int = Field(default=512, description="Max tokens for LLM answer generation")
     history_summary_max_tokens: int = Field(default=256, description="Max tokens for rolling conversation summary")
 
+    # Security / Networking
+    # Set to True to bypass SSL certificate verification (e.g. corporate proxy issues)
+    bypass_ssl_verify: bool = Field(default=False, env="IMMERSIVE_RAG_BYPASS_SSL_VERIFY")
+
     class Config:
         # Absolute path so .env is found regardless of where uvicorn is launched from
         env_file = str(_BACKEND_ROOT / ".env")
