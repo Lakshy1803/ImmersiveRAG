@@ -96,6 +96,9 @@ IMMERSIVE_RAG_EMBEDDING_MODEL=text-embedding-3-small
 
 # Optional: LlamaParse cloud PDF extraction
 IMMERSIVE_RAG_LLAMA_PARSE_API_KEY=
+
+# Optional: Security / Networking (set to true to bypass corporate proxy SSL errors)
+IMMERSIVE_RAG_BYPASS_SSL_VERIFY=false
 ```
 
 > **Supported LLM providers** (all OpenAI-compatible):
@@ -202,6 +205,7 @@ This physically deletes the Qdrant data directory and clears all SQLite state (j
 | `fdprocessedid` hydration warning | Harmless — caused by browser extension |
 | `OpenAI API error` with corporate key | Verify `BASE_URL` ends with `/v1` and key is correct |
 | `summary_digest` column error | Restart backend — auto-migration runs on startup |
+| `[SSL: CERTIFICATE_VERIFY_FAILED]` | Set `IMMERSIVE_RAG_BYPASS_SSL_VERIFY=true` in `.env` |
 
 ---
 

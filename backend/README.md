@@ -102,6 +102,10 @@ Parser behavior:
 - `IMMERSIVE_RAG_QDRANT_URL=...`
 - `IMMERSIVE_RAG_QDRANT_API_KEY=...`
 
+### Security / Networking
+
+- `IMMERSIVE_RAG_BYPASS_SSL_VERIFY=false` (Set to `true` to bypass certificate verification behind corporate proxies)
+
 ## 6. Run The API
 
 From the repo root:
