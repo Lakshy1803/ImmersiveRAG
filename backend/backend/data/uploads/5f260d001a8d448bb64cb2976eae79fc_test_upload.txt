@@ -1,0 +1,1 @@
+This is a test document for the ImmersiveRAG pipeline. The framework focuses on semantic retrieval.

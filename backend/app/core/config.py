@@ -1,83 +1,49 @@
-from __future__ import annotations
-
-from pathlib import Path
-from typing import Literal
-
+from pydantic_settings import BaseSettings
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
+from pathlib import Path
 
+# Derive absolute backend root regardless of where uvicorn is launched from
+# config.py lives at: backend/app/core/config.py  =>  .parent=core, .parent=app, .parent=backend
+_BACKEND_ROOT = Path(__file__).parent.parent.parent.resolve()
+_DATA_DIR = _BACKEND_ROOT / "data"
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="IMMERSIVE_RAG_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+class AppConfig(BaseSettings):
+    # API configuration
+    api_title: str = "ImmersiveRAG Shared Context API"
+    api_version: str = "v1.0"
 
-    app_name: str = "ImmersiveRAG"
-    data_dir: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[2] / "data")
-    uploads_dir_name: str = "uploads"
-    extracted_images_dir_name: str = "images"
-    database_name: str = "rag.db"
+    # Storage and DB paths (always absolute — derived from this file's location)
+    data_dir: str = str(_DATA_DIR)
+    sqlite_db_path: str = f"sqlite:///{_DATA_DIR / 'rag.db'}"
+    qdrant_path: str = str(_DATA_DIR / "qdrant")
 
-    max_file_size_bytes: int = 20 * 1024 * 1024
-    max_evidence_items: int = 8
-    min_supported_score: float = 0.18
-    chunk_size: int = 400
-    chunk_overlap: int = 50
-    min_image_side_pixels: int = 32
+    # Ingestion Configuration
+    llamaparse_api_key: Optional[str] = Field(default=None, env="IMMERSIVE_RAG_LLAMA_PARSE_API_KEY")
 
-    parser_provider: Literal["llamaparse"] = "llamaparse"
-    llama_parse_api_key: str | None = None
-    llama_parse_result_type: Literal["markdown", "text"] = "markdown"
-    llama_parse_language: str = "en"
-    llama_parse_num_workers: int = 1
-    llama_parse_fast_mode: bool = False
-    llama_parse_premium_mode: bool = False
-    llama_parse_verbose: bool = False
-    llama_parse_do_ocr: bool = True
-    llama_parse_confidence_threshold: float = 0.65
-    embedding_provider: Literal["fastembed", "openai"] = "fastembed"
-    embedding_model: str = "BAAI/bge-small-en-v1.5"
-    embedding_cache_dir: Path | None = None
-    openai_api_key: str | None = None
-    openai_base_url: str | None = None
-    openai_embedding_model: str = "text-embedding-3-small"
+    # ── Company Embedding API (OpenAI-compatible) ──────────────────────────
+    # If embedding_api_key is unset → falls back to local FastEmbed (384-dim)
+    embedding_provider: str = Field(default="corporate_api", env="IMMERSIVE_RAG_EMBEDDING_PROVIDER")
+    embedding_model: str = Field(default="text-embedding-3-small", env="IMMERSIVE_RAG_EMBEDDING_MODEL")
+    embedding_api_key: Optional[str] = Field(default=None, env="IMMERSIVE_RAG_OPENAI_API_KEY")
+    embedding_base_url: Optional[str] = Field(default=None, env="IMMERSIVE_RAG_OPENAI_BASE_URL")
 
-    generation_provider: Literal["extractive", "openai"] = "extractive"
-    generation_model: str = "openai/gpt-oss-120b"
-    generation_api_key: str | None = None
-    generation_base_url: str | None = None
-    generation_temperature: float = 0.2
-    generation_max_completion_tokens: int = 1200
+    # ── Company LLM Generation API (for agent answer synthesis / future use) ──
+    # These are not used in the base retrieval-only mode.
+    # Wire these into your LangGraph node when you need generated answers.
+    llm_api_key: Optional[str] = Field(default=None, env="IMMERSIVE_RAG_LLM_API_KEY")
+    llm_base_url: Optional[str] = Field(default=None, env="IMMERSIVE_RAG_LLM_BASE_URL")
+    llm_model: str = Field(default="gpt-4o", env="IMMERSIVE_RAG_LLM_MODEL")
 
-    qdrant_location: str | None = None
-    qdrant_url: str | None = None
-    qdrant_api_key: str | None = None
-    qdrant_path: Path | None = None
-    qdrant_text_collection: str = "rag_text"
-    qdrant_image_collection: str = "rag_image"
-    multimodal_text_top_k: int = 5
-    multimodal_image_top_k: int = 5
+    # Memory Management
+    max_context_tokens: int = Field(default=4000, description="Max tokens returned to the agent")
+    session_timeout_minutes: int = Field(default=30)
+    sliding_window_size: int = Field(default=10, description="Max recent queries kept in session memory")
 
-    @property
-    def uploads_dir(self) -> Path:
-        return self.data_dir / self.uploads_dir_name
+    class Config:
+        # Absolute path so .env is found regardless of where uvicorn is launched from
+        env_file = str(_BACKEND_ROOT / ".env")
+        env_prefix = "IMMERSIVE_RAG_"
+        extra = "ignore"
 
-    @property
-    def extracted_images_dir(self) -> Path:
-        return self.data_dir / self.extracted_images_dir_name
-
-    @property
-    def database_path(self) -> Path:
-        return self.data_dir / self.database_name
-
-    @property
-    def qdrant_storage_path(self) -> Path:
-        if self.qdrant_path is not None:
-            return self.qdrant_path
-        return self.data_dir / "qdrant"
-
-
-settings = Settings()
+config = AppConfig()

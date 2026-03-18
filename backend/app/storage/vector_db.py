@@ -1,0 +1,42 @@
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams
+from app.core.config import config
+import os
+
+COLLECTION_NAME = "rag_text"
+
+_qdrant_client = None
+
+def get_qdrant_client() -> QdrantClient:
+    global _qdrant_client
+    if _qdrant_client is None:
+        os.makedirs(config.qdrant_path, exist_ok=True)
+        _qdrant_client = QdrantClient(path=config.qdrant_path)
+    return _qdrant_client
+
+def ensure_collection(client: QdrantClient) -> None:
+    """Creates the rag_text collection if it doesn't exist."""
+    dim_size = 1536 if config.embedding_api_key else 384
+    try:
+        client.get_collection(COLLECTION_NAME)
+    except Exception:
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(size=dim_size, distance=Distance.COSINE, on_disk=True)
+        )
+
+def init_qdrant_collections():
+    client = get_qdrant_client()
+    ensure_collection(client)
+
+    # Image vectors collection (Multimodal)
+    try:
+        client.get_collection("rag_image")
+    except Exception:
+        client.create_collection(
+            collection_name="rag_image",
+            vectors_config=VectorParams(size=512, distance=Distance.COSINE, on_disk=True)
+        )
+
+# Initialize collections on module load
+init_qdrant_collections()
