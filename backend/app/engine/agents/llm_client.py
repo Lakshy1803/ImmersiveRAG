@@ -35,6 +35,12 @@ def get_llm() -> ChatOpenAI:
     if config.llm_base_url:
         kwargs["base_url"] = config.llm_base_url
 
+    if config.bypass_ssl_verify:
+        import httpx
+        logger.warning("Bypassing SSL verification for LLM client.")
+        # Note: ChatOpenAI uses httpx internally and accepts a custom client
+        kwargs["http_client"] = httpx.Client(verify=False)
+
     _llm_instance = ChatOpenAI(**kwargs)
     logger.info(f"LLM client initialized: model={config.llm_model}")
     return _llm_instance
