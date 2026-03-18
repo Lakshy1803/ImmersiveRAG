@@ -14,6 +14,16 @@ def get_qdrant_client() -> QdrantClient:
         _qdrant_client = QdrantClient(path=config.qdrant_path)
     return _qdrant_client
 
+def reset_qdrant_client():
+    """Closes the current Qdrant client and clears the singleton so the next call gets a fresh connection."""
+    global _qdrant_client
+    if _qdrant_client is not None:
+        try:
+            _qdrant_client.close()
+        except Exception:
+            pass
+        _qdrant_client = None
+
 def ensure_collection(client: QdrantClient) -> None:
     """Creates the rag_text collection if it doesn't exist."""
     dim_size = 1536 if config.embedding_api_key else 384

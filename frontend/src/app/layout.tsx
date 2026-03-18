@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], display: 'swap' });
 
 export const metadata: Metadata = {
-  title: "ImmersiveRAG | Shared Context Service",
-  description: "Next.js Console for configuring and querying local corporate vector layers",
+  title: "Corporate Luminary AI | PwC ImmersiveRAG",
+  description: "Next.js Executive Console for corporate vector layers and agentic context",
 };
 
 export default function RootLayout({
@@ -15,9 +15,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+      </head>
       <body
-        className={`${inter.className} antialiased bg-slate-950 text-slate-100 selection:bg-indigo-500/30 min-h-screen`}
+        className={`${inter.className} antialiased bg-surface text-on-surface selection:bg-primary/30 min-h-screen`}
         suppressHydrationWarning
       >
         {children}

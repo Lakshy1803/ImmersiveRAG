@@ -9,9 +9,10 @@ interface UploadZoneProps {
   disabled?: boolean;
   status: JobStatus | 'idle';
   error: string | null;
+  compact?: boolean;
 }
 
-export function UploadZone({ onFileSelect, disabled, status, error }: UploadZoneProps) {
+export function UploadZone({ onFileSelect, disabled, status, error, compact = false }: UploadZoneProps) {
   const [isHovered, setIsHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -25,23 +26,29 @@ export function UploadZone({ onFileSelect, disabled, status, error }: UploadZone
     }
   };
 
+  const isProcessing = status !== 'idle' && status !== 'complete' && status !== 'failed';
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[300px]">
+    <div className={`${compact ? 'bg-transparent' : 'bg-surface-container border border-outline-variant/30 rounded-xl p-6 shadow-xl'} text-center relative overflow-hidden flex flex-col items-center justify-center ${compact ? 'min-h-[140px]' : 'min-h-[300px]'}`}>
       {status === 'idle' ? (
         <div 
           onClick={() => !disabled && inputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setIsHovered(true); }}
           onDragLeave={() => setIsHovered(false)}
           onDrop={handleDrop}
-          className={`flex flex-col items-center justify-center w-full h-full p-8 border-2 border-dashed rounded-lg cursor-pointer transition-all duration-300 ${isHovered ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-700 hover:border-indigo-400 hover:bg-slate-800/50'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`flex flex-col items-center justify-center w-full h-full ${compact ? 'p-4' : 'p-8'} border-2 border-dashed rounded-2xl cursor-pointer transition-all duration-300 ${isHovered ? 'border-primary bg-primary/5' : 'border-outline-variant/30 hover:border-primary/50 hover:bg-surface-container-high/40'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          <UploadCloud className={`w-12 h-12 mb-4 transition-colors ${isHovered ? 'text-indigo-400' : 'text-slate-500'}`} />
-          <p className="text-sm font-medium text-slate-300">
-            Drag & drop your document here
+          <span className={`material-symbols-outlined mb-2 transition-colors ${compact ? 'text-2xl' : 'text-4xl'} ${isHovered ? 'text-primary' : 'text-on-surface/30'}`}>
+            upload_file
+          </span>
+          <p className={`${compact ? 'text-[10px]' : 'text-sm'} font-bold uppercase tracking-wider text-on-surface/60`}>
+            {compact ? 'Click or Drop File' : 'Drag & drop document here'}
           </p>
-          <p className="text-xs text-slate-500 mt-2">
-            Supports PDF, TXT, MD
-          </p>
+          {!compact && (
+            <p className="text-xs text-on-surface/30 mt-2 font-medium">
+              Supports PDF, TXT, MD
+            </p>
+          )}
           <input 
              ref={inputRef} 
              type="file" 
@@ -51,45 +58,44 @@ export function UploadZone({ onFileSelect, disabled, status, error }: UploadZone
           />
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center space-y-4 animate-in fade-in duration-500">
+        <div className="flex flex-col items-center justify-center space-y-3 animate-in fade-in duration-500 w-full">
            {status === 'complete' ? (
-              <CheckCircle2 className="w-16 h-16 text-emerald-400" />
+              <span className="material-symbols-outlined text-4xl text-emerald-500 scale-125">check_circle</span>
            ) : status === 'failed' ? (
-              <XCircle className="w-16 h-16 text-red-400" />
+              <span className="material-symbols-outlined text-4xl text-primary scale-125">error</span>
            ) : (
-              <Spinner className="w-12 h-12 text-indigo-400" />
+              <Spinner className={`text-primary ${compact ? 'w-8 h-8' : 'w-12 h-12'}`} />
            )}
-           <h3 className="text-xl font-semibold text-slate-200 capitalize">
-              {status.replace(/_/g, ' ')}
-           </h3>
-           <p className="text-slate-400 text-sm max-w-xs mx-auto">
+           
+           {!compact && (
+             <h3 className="text-lg font-bold text-on-surface capitalize tracking-tight">
+                {status.replace(/_/g, ' ')}
+             </h3>
+           )}
+
+           <p className={`text-on-surface/60 font-medium leading-tight ${compact ? 'text-[10px]' : 'text-xs max-w-xs'}`}>
              {status === 'complete' 
-               ? 'Document successfully processed and vectors embedded!'
-               : 'Please wait while the document pipeline processes background tasks.'}
+               ? 'Vectors successfully indexed.'
+               : status === 'failed'
+               ? 'Processing failed.'
+               : `Current State: ${status.replace(/_/g, ' ')}`}
            </p>
-           {status === 'complete' && (
-             <button 
-               onClick={() => window.location.reload()} 
-               className="mt-4 text-xs text-indigo-400 hover:text-indigo-300 underline"
-             >
-               Upload another
-             </button>
-           )}
-           {status === 'failed' && (
-             <button 
-               onClick={() => window.location.reload()} 
-               className="mt-4 text-xs text-red-400 hover:text-red-300 underline"
-             >
-               Retry Upload
-             </button>
+
+           {(status === 'complete' || status === 'failed') && (
+              <button 
+                onClick={() => window.location.reload()} 
+                className={`mt-2 font-bold uppercase tracking-widest text-primary hover:brightness-125 underline decoration-2 underline-offset-4 transition-all ${compact ? 'text-[9px]' : 'text-[10px]'}`}
+              >
+                {status === 'complete' ? 'Reset Workspace' : 'Retry Upload'}
+              </button>
            )}
         </div>
       )}
       
-      {error && (
-        <div className="absolute bottom-4 left-4 right-4 bg-red-500/20 border border-red-500/50 text-red-200 text-xs px-4 py-3 rounded-lg flex items-center gap-2 text-left">
-          <XCircle className="w-4 h-4 flex-shrink-0" />
-          <span className="truncate">{error}</span>
+      {error && !compact && (
+        <div className="mt-4 w-full bg-primary/10 border border-primary/20 text-on-surface/80 text-[10px] px-3 py-2 rounded-lg flex items-center gap-2 text-left">
+          <span className="material-symbols-outlined text-sm text-primary">warning</span>
+          <span className="truncate font-medium">{error}</span>
         </div>
       )}
     </div>

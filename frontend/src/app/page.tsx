@@ -1,26 +1,44 @@
-import { IngestionManager } from "@/components/Ingestion/IngestionManager";
+"use client";
+
+import React, { useState } from "react";
+import Header from "@/components/Navigation/Header";
+import SidebarLeft from "@/components/Navigation/SidebarLeft";
+import SidebarRight from "@/components/Navigation/SidebarRight";
 import { AgentChat } from "@/components/Chat/AgentChat";
+import { ChunkNode } from "@/lib/api";
 
 export default function Home() {
+  const [extractedContext, setExtractedContext] = useState<ChunkNode[]>([]);
+
   return (
-    <main className="min-h-screen bg-slate-950 px-6 py-12 md:p-12 2xl:p-24 overflow-x-hidden relative">
-      {/* Decorative Blur Orbs */}
-      <div className="absolute top-0 left-[20%] w-[500px] h-[500px] bg-indigo-600/20 blur-[120px] rounded-full pointer-events-none -translate-y-1/2" />
-      <div className="absolute top-1/2 right-[10%] w-[400px] h-[400px] bg-fuchsia-600/20 blur-[120px] rounded-full pointer-events-none -translate-y-1/2" />
+    <div className="min-h-screen bg-surface flex flex-col">
+      <Header />
+      
+      <div className="flex flex-1 relative overflow-hidden">
+        {/* Left Navigation */}
+        <SidebarLeft />
 
-      <div className="max-w-[1600px] mx-auto 2xl:my-auto grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-24 relative z-10 items-start mt-8">
-        
-        {/* Left Column: Config & Upload Dashboard */}
-        <section className="flex flex-col h-full animate-in fade-in slide-in-from-left-8 duration-700 ease-out">
-           <IngestionManager />
-        </section>
+        {/* Main Canvas */}
+        <main className="lg:ml-64 xl:mr-72 flex-1 min-h-screen pt-16 flex flex-col relative bg-surface">
+          <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+            <AgentChat onContextUpdate={setExtractedContext} />
+          </div>
 
-        {/* Right Column: Interactive Context Node Search */}
-        <section className="flex flex-col h-full items-start lg:items-end animate-in fade-in slide-in-from-right-8 duration-700 ease-out">
-           <AgentChat />
-        </section>
+          {/* Footer Label from sample */}
+          <div className="absolute bottom-6 left-0 w-full flex justify-center gap-8 pointer-events-none z-10">
+            <span className="flex items-center gap-1.5 text-[10px] text-on-surface/20 font-semibold uppercase tracking-[0.15em]">
+              AGENTIC AUTOMATION
+            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-on-surface/20 font-semibold uppercase tracking-[0.15em]">
+              <span className="material-symbols-outlined text-[12px]">verified</span>
+              PwC&nbsp;
+            </span>
+          </div>
+        </main>
 
+        {/* Right Context & Ingestion Panel */}
+        <SidebarRight extractedContext={extractedContext} />
       </div>
-    </main>
+    </div>
   );
 }
