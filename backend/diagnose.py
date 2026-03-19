@@ -123,7 +123,8 @@ async def run_diagnostics():
         response = await client.chat.completions.create(
             model=config.llm_model,
             messages=[{"role": "user", "content": "Diagnostic: Say 'READY'"}],
-            max_tokens=10
+            max_tokens=500,  # Increased room for PwC proxy overhead
+            temperature=0.7
         )
         
         # LOGGING FOR DEEP DEBUGGING
@@ -135,6 +136,7 @@ async def run_diagnostics():
         if content is None:
             print_warning("LLM returned 'None' content. Safety filter or safety settings might be too high.")
             print(f"  - Finish Reason: {response.choices[0].finish_reason}")
+            print(f"  - Refusal: {getattr(response.choices[0].message, 'refusal', 'None')}")
             print(f"  - Raw Message: {response.choices[0].message}")
         else:
             print_success(f"LLM Response: '{content.strip()}' (Time: {time.time()-start:.2f}s)")
