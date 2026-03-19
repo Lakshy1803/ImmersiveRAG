@@ -32,7 +32,7 @@ def print_warning(msg):
 def print_error(msg, tip=None):
     print(f"  {Colors.FAIL}[FAIL]{Colors.END} {msg}")
     if tip:
-        print(f"         💡 Tip: {tip}")
+        print(f"         Tip: {tip}")
 
 def check_network(host, port=443):
     import socket
@@ -45,10 +45,10 @@ def check_network(host, port=443):
 
 def main():
     print("\n" + "="*60)
-    print(f"{Colors.HEADER}{Colors.BOLD}      🔍 IMMERSIVERAG END-TO-END DIAGNOSTICS (SYNC)      {Colors.END}")
+    print(f"{Colors.HEADER}{Colors.BOLD}      IMMERSIVERAG END-TO-END DIAGNOSTICS (SYNC)      {Colors.END}")
     print("="*60 + "\n")
 
-    # 🟢 STEP 1: System Info
+    # STEP 1: System Info
     print_step("Checking System & Environment...")
     print(f"  - Platform: {platform.system()} {platform.release()}")
     print(f"  - Python: {platform.python_version()}")
@@ -59,7 +59,7 @@ def main():
     proxy = os.environ.get('HTTP_PROXY') or os.environ.get('https_proxy')
     print(f"  - Proxy Detected: {proxy or 'None'}")
 
-    # 🟢 STEP 2: File System & Qdrant Lock
+    # STEP 2: File System & Qdrant Lock
     print_step("Checking File System Permissions...")
     qdrant_path = os.path.join(os.getcwd(), "data", "qdrant")
     lock_file = os.path.join(qdrant_path, ".lock")
@@ -70,7 +70,7 @@ def main():
     else:
         print_success("Qdrant storage is clear of stale locks.")
 
-    # 🟢 STEP 3: Network Connectivity
+    # STEP 3: Network Connectivity
     print_step("Checking Network Connectivity...")
     connectivity = {
         "HuggingFace (Models)": "huggingface.co",
@@ -83,7 +83,7 @@ def main():
         else:
             print_warning(f"Network: {name} ({host}) is unreachable. Check your VPN/Proxy.")
 
-    # 🟢 STEP 4: Vector Store (Qdrant)
+    # STEP 4: Vector Store (Qdrant)
     print_step("Testing Vector Store (Qdrant)...")
     try:
         from app.storage.vector_db import get_qdrant_client
@@ -93,7 +93,7 @@ def main():
     except Exception as e:
         print_error(f"Vector DB Connection Failed: {e}")
 
-    # 🟢 STEP 5: Embedding Generation (FastEmbed / API)
+    # STEP 5: Embedding Generation (FastEmbed / API)
     print_step("Testing Embedding Generation...")
     try:
         from app.engine.ingestion.embedder import get_corporate_embeddings
@@ -105,7 +105,7 @@ def main():
     except Exception as e:
         print_error(f"Local Embedding Generation Failed: {e}", "Ensure 'fastembed' is installed.")
 
-    # 🟢 STEP 6: LLM Generation Test (Sync)
+    # STEP 6: LLM Generation Test (Sync)
     print_step("Testing LLM generation (Sync Client)...")
     try:
         start = time.time()

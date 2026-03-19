@@ -57,5 +57,5 @@ def init_qdrant_collections():
             vectors_config=VectorParams(size=512, distance=Distance.COSINE, on_disk=True)
         )
 
-# Initialize collections on module load
-init_qdrant_collections()
+# Removed top-level init to prevent import-time crashes.
+# Call init_qdrant_collections() during app startup.
