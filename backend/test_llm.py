@@ -1,41 +1,44 @@
 import os
 import sys
+import asyncio
 
 # Ensure backend/ directory is in python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.core.config import config
-from app.engine.agents.llm_client import get_llm
-from langchain_core.messages import HumanMessage
+from app.engine.agents.llm_client import get_llm_client
 
-def test_generation():
-    print(f"--- LLM Generation Test ---")
+async def test_generation():
+    print(f"--- LLM Generation Test (Official OpenAI Client) ---")
     print(f"Model: {config.llm_model}")
     print(f"Base URL: {config.llm_base_url or 'Default'}")
+    print(f"Bypass SSL: {config.bypass_ssl_verify}")
     
     try:
-        # Initialize the LLM client
-        llm = get_llm()
+        # Initialize the official AsyncOpenAI client
+        client = get_llm_client()
         
         print("\nSending test prompt: 'Hello, what is 2+2?'")
-        messages = [HumanMessage(content="Hello, what is 2+2?")]
+        messages = [
+            {"role": "user", "content": "Hello, what is 2+2?"}
+        ]
         
-        # Test basic invocation
+        # Test basic chat completion
         print("Waiting for response...")
-        response = llm.invoke(messages)
+        response = await client.chat.completions.create(
+            model=config.llm_model,
+            messages=messages,
+            max_tokens=50
+        )
         
         print("\n--- RESPONSE RECEIVED ---")
-        print(response.content)
+        print(response.choices[0].message.content.strip())
         print("--------------------------")
-        print("\n✅ LLM Generation Service is WORKING correctly.")
+        print("\n✅ Official OpenAI Client is WORKING correctly.")
 
     except Exception as e:
-        print("\n❌ LLM Generation Service FAILED.")
+        print("\n❌ LLM Connection FAILED.")
         print(f"Error detail: {e}")
-        print("\nPossible fixes:")
-        print("1. Check if IMMERSIVE_RAG_LLM_API_KEY is correct in your .env file.")
-        print("2. Verify if you have internet access (or VPN OFF if using Groq).")
-        print("3. Check if IMMERSIVE_RAG_LLM_BASE_URL matches your provider's OpenAI-compatible endpoint.")
 
 if __name__ == "__main__":
-    test_generation()
+    asyncio.run(test_generation())

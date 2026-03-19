@@ -107,8 +107,7 @@ class ConversationMemory:
             return  # Only refresh every 4th turn, starting after 8 messages
 
         try:
-            from app.engine.agents.llm_client import get_llm
-            from langchain_core.messages import SystemMessage, HumanMessage
+            from app.engine.agents.llm_client import get_sync_llm_client
 
             # Get older messages (skip the last 4 which are "recent")
             with get_connection() as conn:
@@ -130,15 +129,19 @@ class ConversationMemory:
                 f"{r['role'].upper()}: {r['content'][:200]}" for r in older
             )
 
-            llm = get_llm()
-            msgs = [
-                SystemMessage(content="Summarize this conversation in 3 sentences or fewer. Be extremely concise."),
-                HumanMessage(content=transcript[:2000])  # hard limit input
-            ]
-            result = llm.invoke(msgs)
-            summary = result.content.strip()[:1024]  # safety cap
+            client = get_sync_llm_client()
+            response = client.chat.completions.create(
+                model=config.llm_model,
+                messages=[
+                    {"role": "system", "content": "Summarize this conversation in 3 sentences or fewer. Be extremely concise."},
+                    {"role": "user", "content": transcript[:2000]}
+                ],
+                max_tokens=config.history_summary_max_tokens,
+                temperature=0.3
+            )
+            summary = response.choices[0].message.content.strip()[:1024]
             self.save_summary_digest(summary)
-            logger.info(f"Refreshed summary digest for session {self.session_id} ({_estimate_tokens(summary)} est. tokens)")
+            logger.info(f"Refreshed summary digest for session {self.session_id}")
 
         except Exception as e:
             logger.warning(f"Failed to refresh summary digest: {e}")

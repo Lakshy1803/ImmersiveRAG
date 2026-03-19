@@ -59,10 +59,10 @@ async def agent_chat(request: AgentChatRequest):
     if not agent_def:
         raise HTTPException(status_code=404, detail=f"Agent '{request.agent_id}' not found.")
 
-    # 2. Run the LangGraph pipeline
+    # 2. Run the LangGraph pipeline (Async)
     from app.engine.agents.graph_runner import run_agent_graph
 
-    result = run_agent_graph(
+    result = await run_agent_graph(
         question=request.question,
         agent_id=request.agent_id,
         session_id=request.session_id,
@@ -100,17 +100,12 @@ async def agent_chat_stream(request: AgentChatRequest):
             yield f"data: {json.dumps({'token': '[CONNECTED] '})}\n\n"
             from app.engine.agents.conversation_memory import ConversationMemory
             from app.engine.retrieval.orchestrator import RetrievalOrchestrator
-            from app.engine.agents.llm_client import get_llm
-            from langchain_core.messages import SystemMessage, HumanMessage
-
-            # Step 1: Retrieve context (blocking, run in threadpool to avoid loop block)
+            # Step 1: Retrieve context
             orchestrator = RetrievalOrchestrator(
                 agent_id=request.agent_id,
                 session_id=request.session_id
             )
             from app.core.config import config as app_config
-            
-            # Use run_in_threadpool so the yield [CONNECTED] can flush immediately
             chunks, tokens_used, cache_hit = await run_in_threadpool(
                 orchestrator.retrieve,
                 query=request.question,
@@ -118,7 +113,7 @@ async def agent_chat_stream(request: AgentChatRequest):
                 max_tokens=app_config.max_context_tokens
             )
 
-            # Step 2: Build prompt
+            # Step 2: Build prompt messages
             memory = ConversationMemory(request.session_id, request.agent_id)
             history_context = memory.build_history_context()
 
@@ -129,22 +124,33 @@ async def agent_chat_stream(request: AgentChatRequest):
                     for i, c in enumerate(chunks)
                 )
 
-            messages = [SystemMessage(content=agent_def["system_prompt"])]
+            # System and User messages (OpenAI dictionary format)
+            messages = [{"role": "system", "content": agent_def["system_prompt"]}]
             if history_context:
-                messages.append(SystemMessage(content=f"Conversation history:\n{history_context}"))
-            messages.append(HumanMessage(
-                content=f"Context from knowledge base:\n{context_str}\n\nUser question: {request.question}"
-            ))
+                messages.append({"role": "system", "content": f"Conversation history:\n{history_context}"})
+            
+            messages.append({"role": "user", "content": f"Context from knowledge base:\n{context_str}\n\nUser question: {request.question}"})
 
-            # Step 3: Stream tokens
-            llm = get_llm()
+            # Step 3: Stream tokens from AsyncOpenAI
+            from app.engine.agents.llm_client import get_llm_client
+            client = get_llm_client()
             full_answer = ""
-            async for token_chunk in llm.astream(messages):
-                token = token_chunk.content
+
+            response = await client.chat.completions.create(
+                model=app_config.llm_model,
+                messages=messages,
+                stream=True,
+                max_tokens=app_config.llm_max_answer_tokens,
+                temperature=0.3
+            )
+
+            async for chunk in response:
+                token = chunk.choices[0].delta.content
                 if token:
                     full_answer += token
                     yield f"data: {json.dumps({'token': token})}\n\n"
-                    await asyncio.sleep(0)  # Yield control
+                    # yield control to the event loop
+                    await asyncio.sleep(0)
 
             # Step 4: Persist conversation turn
             memory.append_turn("user", request.question)

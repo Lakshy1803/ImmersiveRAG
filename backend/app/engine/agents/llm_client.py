@@ -1,46 +1,59 @@
 """
-Thin wrapper around LangChain's ChatOpenAI using the company-provided API keys.
-Cached as a singleton to avoid re-initialization on every request.
+Official OpenAI-compatible client for ImmersiveRAG.
+Returns a singleton AsyncOpenAI client instance.
 """
 import logging
-from langchain_openai import ChatOpenAI
+from openai import AsyncOpenAI
 from app.core.config import config
 
 logger = logging.getLogger(__name__)
 
-_llm_instance: ChatOpenAI | None = None
+_async_client: AsyncOpenAI | None = None
+_sync_client = None # For lazy loading OpenAI sync client
 
-
-def get_llm() -> ChatOpenAI:
-    """Returns a cached ChatOpenAI instance configured from .env settings."""
-    global _llm_instance
-    if _llm_instance is not None:
-        return _llm_instance
+def get_llm_client() -> AsyncOpenAI:
+    """Returns a cached AsyncOpenAI instance configured from .env settings."""
+    global _async_client
+    if _async_client is not None:
+        return _async_client
 
     api_key = config.llm_api_key
     if not api_key:
-        raise RuntimeError(
-            "IMMERSIVE_RAG_LLM_API_KEY is not set. "
-            "Please configure your company LLM API key in backend/.env"
-        )
+        raise RuntimeError("IMMERSIVE_RAG_LLM_API_KEY is not set.")
 
-    kwargs: dict = {
-        "api_key": api_key,
-        "model": config.llm_model,
-        "max_tokens": config.llm_max_answer_tokens,
-        "temperature": 0.3,  # Low temp for precise corporate answers
-        "streaming": True,   # Enable streaming for real-time token delivery
-    }
-
+    client_kwargs = {"api_key": api_key}
     if config.llm_base_url:
-        kwargs["base_url"] = config.llm_base_url
+        client_kwargs["base_url"] = config.llm_base_url
+
+    # Handle SSL verification bypass if configured
+    if config.bypass_ssl_verify:
+        import httpx
+        client_kwargs["http_client"] = httpx.AsyncClient(verify=False)
+
+    _async_client = AsyncOpenAI(**client_kwargs)
+    logger.info(f"AsyncOpenAI client ready (model: {config.llm_model})")
+    return _async_client
+
+def get_sync_llm_client():
+    """Returns a cached sync OpenAI instance (for background tasks like Memory summary)."""
+    global _sync_client
+    if _sync_client is not None:
+        return _sync_client
+
+    from openai import OpenAI
+    api_key = config.llm_api_key
+    if not api_key:
+        raise RuntimeError("IMMERSIVE_RAG_LLM_API_KEY is not set.")
+
+    client_kwargs = {"api_key": api_key}
+    if config.llm_base_url:
+        client_kwargs["base_url"] = config.llm_base_url
 
     if config.bypass_ssl_verify:
         import httpx
-        logger.warning("Bypassing SSL verification for LLM client.")
-        # Note: ChatOpenAI uses httpx internally and accepts a custom client
-        kwargs["http_client"] = httpx.Client(verify=False)
+        # We use a standard httpx.Client (not Async) for sync
+        client_kwargs["http_client"] = httpx.Client(verify=False)
 
-    _llm_instance = ChatOpenAI(**kwargs)
-    logger.info(f"LLM client initialized: model={config.llm_model}")
-    return _llm_instance
+    _sync_client = OpenAI(**client_kwargs)
+    logger.info("Sync OpenAI client ready.")
+    return _sync_client

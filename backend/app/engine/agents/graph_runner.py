@@ -36,8 +36,9 @@ class AgentState(TypedDict):
 
 
 # ── Node 1: Retrieve ───────────────────────────────────────────────────
-def retrieve_node(state: AgentState) -> dict:
+async def retrieve_node(state: AgentState) -> dict:
     """Embeds the query and searches Qdrant via the existing orchestrator."""
+    # Orchestrator still uses a threadpool internally in retrieve if needed
     orchestrator = RetrievalOrchestrator(
         agent_id=state["agent_id"],
         session_id=state["session_id"]
@@ -57,9 +58,10 @@ def retrieve_node(state: AgentState) -> dict:
 
 
 # ── Node 2: Generate ──────────────────────────────────────────────────
-def generate_node(state: AgentState) -> dict:
-    """Builds a minimal prompt and calls the LLM."""
-    llm = get_llm()
+async def generate_node(state: AgentState) -> dict:
+    """Builds a minimal prompt and calls the official OpenAI client."""
+    from app.engine.agents.llm_client import get_llm_client
+    client = get_llm_client()
 
     # Build context string from chunks
     chunks = state.get("context_chunks", [])
@@ -73,28 +75,33 @@ def generate_node(state: AgentState) -> dict:
     else:
         context_str = "No relevant documents found in the knowledge base."
 
-    # Build the LLM messages (token-budgeted)
+    # Build the official OpenAI message format
     messages = [
-        SystemMessage(content=state["system_prompt"]),
+        {"role": "system", "content": state["system_prompt"]},
     ]
 
     # Add history context if present
     history = state.get("history_context", "")
     if history:
-        messages.append(SystemMessage(content=f"Conversation history:\n{history}"))
+        messages.append({"role": "system", "content": f"Conversation history:\n{history}"})
 
     # User question with context
     user_content = (
         f"Context from knowledge base:\n{context_str}\n\n"
         f"User question: {state['question']}"
     )
-    messages.append(HumanMessage(content=user_content))
+    messages.append({"role": "user", "content": user_content})
 
     try:
-        response = llm.invoke(messages)
-        answer = response.content.strip()
+        response = await client.chat.completions.create(
+            model=config.llm_model,
+            messages=messages,
+            max_tokens=config.llm_max_answer_tokens,
+            temperature=0.3
+        )
+        answer = response.choices[0].message.content.strip()
     except Exception as e:
-        logger.error(f"LLM generation failed: {e}")
+        logger.error(f"Official LLM generation failed: {e}")
         answer = f"I encountered an error generating a response: {str(e)}"
 
     return {"answer": answer}
@@ -102,7 +109,7 @@ def generate_node(state: AgentState) -> dict:
 
 # ── Graph Builder ──────────────────────────────────────────────────────
 def _build_graph() -> StateGraph:
-    """Constructs the 2-node LangGraph StateGraph."""
+    """Constructs the 2-node LangGraph StateGraph (Async)."""
     graph = StateGraph(AgentState)
 
     graph.add_node("retrieve", retrieve_node)
@@ -127,14 +134,14 @@ def _get_graph():
 
 
 # ── Public API ─────────────────────────────────────────────────────────
-def run_agent_graph(
+async def run_agent_graph(
     question: str,
     agent_id: str,
     session_id: str,
     system_prompt: str,
 ) -> dict:
     """
-    Runs the full RAG + LLM pipeline.
+    Runs the full RAG + LLM pipeline (Async).
 
     Returns:
         {
@@ -148,7 +155,7 @@ def run_agent_graph(
     memory = ConversationMemory(session_id, agent_id)
     history_context = memory.build_history_context()
 
-    # Run the graph
+    # Run the graph using ainvoke()
     graph = _get_graph()
     initial_state: AgentState = {
         "question": question,
@@ -162,7 +169,7 @@ def run_agent_graph(
         "cache_hit": False,
     }
 
-    result = graph.invoke(initial_state)
+    result = await graph.ainvoke(initial_state)
 
     # Persist conversation turns
     memory.append_turn("user", question)
