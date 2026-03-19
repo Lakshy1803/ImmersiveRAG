@@ -122,8 +122,8 @@ async def run_diagnostics():
         client = get_llm_client()
         response = await client.chat.completions.create(
             model=config.llm_model,
-            messages=[{"role": "user", "content": "Diagnostic: Say 'READY'"}],
-            max_tokens=500,  # Increased room for PwC proxy overhead
+            messages=[{"role": "user", "content": "Write a 5 paragraph essay about the history of artificial intelligence. Be very descriptive."}],
+            max_tokens=2000, 
             temperature=0.7
         )
         
@@ -139,7 +139,11 @@ async def run_diagnostics():
             print(f"  - Refusal: {getattr(response.choices[0].message, 'refusal', 'None')}")
             print(f"  - Raw Message: {response.choices[0].message}")
         else:
-            print_success(f"LLM Response: '{content.strip()}' (Time: {time.time()-start:.2f}s)")
+            print_success(f"LLM Response Received (Length: {len(content)} chars)")
+            print(f"  - Finish Reason: {response.choices[0].finish_reason}")
+            print(f"  - First 100 chars: {content[:100].strip()}...")
+            if response.choices[0].finish_reason == 'length':
+                print_warning("Truncation detected. The response was cut off by the provider/proxy.")
             
     except Exception as e:
         print_error(f"LLM Connection Failed: {e}")
