@@ -93,17 +93,23 @@ def main():
     except Exception as e:
         print_error(f"Vector DB Connection Failed: {e}")
 
-    # STEP 5: Embedding Generation (FastEmbed / API)
+    # STEP 5: Embedding Generation (Corporate vs Local)
     print_step("Testing Embedding Generation...")
     try:
         from app.engine.ingestion.embedder import get_corporate_embeddings
         test_text = ["This is a diagnostic test."]
         start = time.time()
-        # Test in local mode first to check setup
-        embs = get_corporate_embeddings(test_text, embedding_mode="local_fastembed")
-        print_success(f"Generated embeddings locally (Dim: {len(embs[0])}) in {time.time()-start:.2f}s")
+        
+        has_api_key = bool(config.embedding_api_key)
+        mode = "corporate" if has_api_key else "local_fastembed"
+        
+        print(f"  - Testing Mode: {mode}")
+        embs = get_corporate_embeddings(test_text, embedding_mode=mode)
+        
+        print_success(f"Generated embeddings ({mode}) (Dim: {len(embs[0])}) in {time.time()-start:.2f}s")
     except Exception as e:
-        print_error(f"Local Embedding Generation Failed: {e}", "Ensure 'fastembed' is installed.")
+        print_error(f"Embedding Generation Failed in {mode} mode: {e}", 
+                    "Check API keys/Base URL if in corporate mode, or fastembed install if local.")
 
     # STEP 6: LLM Generation Test (Sync)
     print_step("Testing LLM generation (Sync Client)...")

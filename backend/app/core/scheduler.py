@@ -135,7 +135,8 @@ def start_scheduler():
             IntervalTrigger(seconds=5),
             id="poll_ingestion",
             replace_existing=True,
-            max_instances=1
+            max_instances=1,
+            misfire_grace_time=60  # Allow some delay without warning (PwC proxy latency)
         )
         
         # Prune memory every 5 minutes
