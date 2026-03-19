@@ -127,7 +127,7 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
   return (
     <div className="flex flex-col flex-1 h-full w-full max-w-4xl mx-auto px-6 py-10">
       {/* Message Log */}
-      <div className="flex-1 space-y-8 pb-32">
+      <div className="flex-1 overflow-y-auto pr-2 space-y-8 pb-32 custom-scrollbar">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex items-start gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.role === 'agent' && (

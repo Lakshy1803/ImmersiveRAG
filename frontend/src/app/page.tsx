@@ -20,8 +20,8 @@ export default function Home() {
         <SidebarLeft activeAgentId={activeAgentId} onAgentChange={setActiveAgentId} />
 
         {/* Main Canvas */}
-        <main className="lg:ml-64 xl:mr-72 flex-1 min-h-screen pt-16 flex flex-col relative bg-surface">
-          <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+        <main className="lg:ml-64 xl:mr-72 flex-1 h-screen pt-16 flex flex-col relative bg-surface">
+          <div className="flex-1 flex flex-col min-h-0">
             <AgentChat activeAgentId={activeAgentId} onContextUpdate={setExtractedContext} />
           </div>
 
