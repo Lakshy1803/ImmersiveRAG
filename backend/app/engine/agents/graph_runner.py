@@ -98,8 +98,12 @@ async def generate_node(state: AgentState) -> dict:
             max_tokens=config.llm_max_answer_tokens,
             temperature=0.3
         )
-        content = response.choices[0].message.content
-        answer = content.strip() if content else "I received an empty response from the LLM. Please check your model configuration or safety filters."
+        if not response.choices:
+            logger.warning(f"LLM returned no choices: {response}")
+            answer = "I received an empty response from the LLM (no choices). This might be due to safety filters or a proxy issue."
+        else:
+            content = response.choices[0].message.content
+            answer = content.strip() if content else "I received an empty content block from the LLM. Please check your model's safety settings."
     except Exception as e:
         logger.error(f"Official LLM generation failed: {e}")
         answer = f"I encountered an error generating a response: {str(e)}"

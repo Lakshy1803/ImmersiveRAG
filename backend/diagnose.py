@@ -125,9 +125,25 @@ async def run_diagnostics():
             messages=[{"role": "user", "content": "Diagnostic: Say 'READY'"}],
             max_tokens=10
         )
-        print_success(f"LLM Response: '{response.choices[0].message.content.strip()}' (Time: {time.time()-start:.2f}s)")
+        
+        # LOGGING FOR DEEP DEBUGGING
+        if not response.choices:
+            print_error("LLM returned NO choices.", f"Full Response: {response}")
+            return
+            
+        content = response.choices[0].message.content
+        if content is None:
+            print_warning("LLM returned 'None' content. Safety filter or safety settings might be too high.")
+            print(f"  - Finish Reason: {response.choices[0].finish_reason}")
+            print(f"  - Raw Message: {response.choices[0].message}")
+        else:
+            print_success(f"LLM Response: '{content.strip()}' (Time: {time.time()-start:.2f}s)")
+            
     except Exception as e:
         print_error(f"LLM Connection Failed: {e}")
+        # If possible, dump the error object attributes
+        if hasattr(e, 'response'):
+             print(f"  - Raw API Error Response: {e.response}")
 
     print("\n" + "="*60)
     print(f"{Colors.BOLD}DIAGNOSTICS COMPLETE.{Colors.END}")

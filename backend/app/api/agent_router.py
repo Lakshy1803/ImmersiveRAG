@@ -145,9 +145,12 @@ async def agent_chat_stream(request: AgentChatRequest):
             )
 
             async for chunk in response:
-                if not chunk.choices:
+                if not chunk.choices or not hasattr(chunk.choices[0], "delta"):
                     continue
-                token = chunk.choices[0].delta.content
+                
+                delta = chunk.choices[0].delta
+                token = getattr(delta, "content", None)
+                
                 if token:
                     full_answer += token
                     yield f"data: {json.dumps({'token': token})}\n\n"
