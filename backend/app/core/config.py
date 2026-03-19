@@ -13,10 +13,11 @@ class AppConfig(BaseSettings):
     api_title: str = "ImmersiveRAG Shared Context API"
     api_version: str = "v1.0"
 
-    # Storage and DB paths (always absolute — derived from this file's location)
+    # Storage and DB paths
     data_dir: str = str(_DATA_DIR)
     sqlite_db_path: str = f"sqlite:///{_DATA_DIR / 'rag.db'}"
     qdrant_path: str = str(_DATA_DIR / "qdrant")
+    qdrant_url: Optional[str] = Field(default=None, env="IMMERSIVE_RAG_QDRANT_URL")
 
     # Ingestion Configuration
     llamaparse_api_key: Optional[str] = Field(default=None, env="IMMERSIVE_RAG_LLAMA_PARSE_API_KEY")

@@ -25,11 +25,6 @@ def get_llm_client() -> AsyncOpenAI:
     if config.llm_base_url:
         client_kwargs["base_url"] = config.llm_base_url
 
-    # Handle SSL verification bypass if configured
-    if config.bypass_ssl_verify:
-        import httpx
-        client_kwargs["http_client"] = httpx.AsyncClient(verify=False)
-
     _async_client = AsyncOpenAI(**client_kwargs)
     logger.info(f"AsyncOpenAI client ready (model: {config.llm_model})")
     return _async_client
@@ -49,11 +44,7 @@ def get_sync_llm_client():
     if config.llm_base_url:
         client_kwargs["base_url"] = config.llm_base_url
 
-    if config.bypass_ssl_verify:
-        import httpx
-        # We use a standard httpx.Client (not Async) for sync
-        client_kwargs["http_client"] = httpx.Client(verify=False)
-
+    # No SSL verification bypass here as requested
     _sync_client = OpenAI(**client_kwargs)
     logger.info("Sync OpenAI client ready.")
     return _sync_client

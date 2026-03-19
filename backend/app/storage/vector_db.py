@@ -10,8 +10,17 @@ _qdrant_client = None
 def get_qdrant_client() -> QdrantClient:
     global _qdrant_client
     if _qdrant_client is None:
-        os.makedirs(config.qdrant_path, exist_ok=True)
-        _qdrant_client = QdrantClient(path=config.qdrant_path)
+        if config.qdrant_url:
+            client_kwargs = {
+                "url": config.qdrant_url,
+            }
+            if config.bypass_ssl_verify:
+                # Qdrant client uses httpx internally, this disables verification
+                client_kwargs["verify"] = False
+            _qdrant_client = QdrantClient(**client_kwargs)
+        else:
+            os.makedirs(config.qdrant_path, exist_ok=True)
+            _qdrant_client = QdrantClient(path=config.qdrant_path)
     return _qdrant_client
 
 def reset_qdrant_client():

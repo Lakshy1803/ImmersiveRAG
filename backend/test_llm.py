@@ -12,7 +12,7 @@ async def test_generation():
     print(f"--- LLM Generation Test (Official OpenAI Client) ---")
     print(f"Model: {config.llm_model}")
     print(f"Base URL: {config.llm_base_url or 'Default'}")
-    print(f"Bypass SSL: {config.bypass_ssl_verify}")
+    print("SSL Verification: STRICT (Enabled)")
     
     try:
         # Initialize the official AsyncOpenAI client
