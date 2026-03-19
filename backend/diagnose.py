@@ -86,23 +86,24 @@ def main():
     # 🟢 STEP 4: Vector Store (Qdrant)
     print_step("Testing Vector Store (Qdrant)...")
     try:
-        from app.storage.vector_db import get_vector_client
-        client = get_vector_client()
+        from app.storage.vector_db import get_qdrant_client
+        client = get_qdrant_client()
         collections = client.get_collections()
         print_success(f"Connected to Qdrant. Found {len(collections.collections)} collections.")
     except Exception as e:
         print_error(f"Vector DB Connection Failed: {e}")
 
-    # 🟢 STEP 5: Embedding Generation (FastEmbed)
-    print_step("Testing Local Embedding Generation (FastEmbed)...")
+    # 🟢 STEP 5: Embedding Generation (FastEmbed / API)
+    print_step("Testing Embedding Generation...")
     try:
-        from app.engine.ingestion.embedder import generate_embeddings
+        from app.engine.ingestion.embedder import get_corporate_embeddings
         test_text = ["This is a diagnostic test."]
         start = time.time()
-        embs = generate_embeddings(test_text)
-        print_success(f"Generated embeddings (Dim: {embs.shape[1]}) in {time.time()-start:.2f}s")
+        # Test in local mode first to check setup
+        embs = get_corporate_embeddings(test_text, embedding_mode="local_fastembed")
+        print_success(f"Generated embeddings locally (Dim: {len(embs[0])}) in {time.time()-start:.2f}s")
     except Exception as e:
-        print_error(f"Embedding Generation Failed: {e}", "Ensure 'fastembed' is installed and you have internet for the initial model download.")
+        print_error(f"Local Embedding Generation Failed: {e}", "Ensure 'fastembed' is installed.")
 
     # 🟢 STEP 6: LLM Generation Test (Sync)
     print_step("Testing LLM generation (Sync Client)...")

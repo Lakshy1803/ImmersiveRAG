@@ -1,9 +1,8 @@
 """
-Official OpenAI-compatible client for ImmersiveRAG.
-Returns a singleton AsyncOpenAI client instance.
+Official OpenAI Client helper.
+Returns a singleton synchronous OpenAI client instance.
 """
 import logging
-from openai import AsyncOpenAI
 from app.core.config import config
 
 logger = logging.getLogger(__name__)
