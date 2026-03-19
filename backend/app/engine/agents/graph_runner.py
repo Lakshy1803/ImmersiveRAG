@@ -91,7 +91,6 @@ async def generate_node(state: AgentState) -> dict:
         f"User question: {state['question']}"
     )
     messages.append({"role": "user", "content": user_content})
-
     try:
         response = await client.chat.completions.create(
             model=config.llm_model,
@@ -99,7 +98,8 @@ async def generate_node(state: AgentState) -> dict:
             max_tokens=config.llm_max_answer_tokens,
             temperature=0.3
         )
-        answer = response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        answer = content.strip() if content else "I received an empty response from the LLM. Please check your model configuration or safety filters."
     except Exception as e:
         logger.error(f"Official LLM generation failed: {e}")
         answer = f"I encountered an error generating a response: {str(e)}"

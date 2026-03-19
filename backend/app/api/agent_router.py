@@ -145,6 +145,8 @@ async def agent_chat_stream(request: AgentChatRequest):
             )
 
             async for chunk in response:
+                if not chunk.choices:
+                    continue
                 token = chunk.choices[0].delta.content
                 if token:
                     full_answer += token
