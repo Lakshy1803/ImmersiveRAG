@@ -8,32 +8,13 @@ from app.core.config import config
 
 logger = logging.getLogger(__name__)
 
-_async_client: AsyncOpenAI | None = None
-_sync_client = None # For lazy loading OpenAI sync client
+_llm_client = None
 
-def get_llm_client() -> AsyncOpenAI:
-    """Returns a cached AsyncOpenAI instance configured from .env settings."""
-    global _async_client
-    if _async_client is not None:
-        return _async_client
-
-    api_key = config.llm_api_key
-    if not api_key:
-        raise RuntimeError("IMMERSIVE_RAG_LLM_API_KEY is not set.")
-
-    client_kwargs = {"api_key": api_key}
-    if config.llm_base_url:
-        client_kwargs["base_url"] = config.llm_base_url
-
-    _async_client = AsyncOpenAI(**client_kwargs)
-    logger.info(f"AsyncOpenAI client ready (model: {config.llm_model})")
-    return _async_client
-
-def get_sync_llm_client():
-    """Returns a cached sync OpenAI instance (for background tasks like Memory summary)."""
-    global _sync_client
-    if _sync_client is not None:
-        return _sync_client
+def get_llm_client():
+    """Returns a cached synchronous OpenAI instance configured from .env settings."""
+    global _llm_client
+    if _llm_client is not None:
+        return _llm_client
 
     from openai import OpenAI
     api_key = config.llm_api_key
@@ -44,7 +25,12 @@ def get_sync_llm_client():
     if config.llm_base_url:
         client_kwargs["base_url"] = config.llm_base_url
 
-    # No SSL verification bypass here as requested
-    _sync_client = OpenAI(**client_kwargs)
-    logger.info("Sync OpenAI client ready.")
-    return _sync_client
+    # Scoped SSL Bypass (only for Qdrant/Model downloads, not LLM by default)
+    # But if users at PwC need it, they can enable it globally in AppConfig
+    if config.bypass_ssl_verify:
+        import httpx
+        client_kwargs["http_client"] = httpx.Client(verify=False)
+
+    _llm_client = OpenAI(**client_kwargs)
+    logger.info(f"Synchronous LLM client ready (model: {config.llm_model})")
+    return _llm_client

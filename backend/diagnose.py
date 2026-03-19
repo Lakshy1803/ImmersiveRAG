@@ -1,27 +1,22 @@
 import os
 import sys
-import logging
 import time
-import asyncio
-import socket
+import logging
 import platform
-from pathlib import Path
 
-# Ensure backend/ directory is in python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add the current directory to sys.path to allow imports from 'app'
+sys.path.append(os.getcwd())
 
 from app.core.config import config
-from app.storage.vector_db import get_qdrant_client
-from app.engine.ingestion.embedder import get_corporate_embeddings
 from app.engine.agents.llm_client import get_llm_client
 
-# Colors for terminal
+# Simple colors for terminal output
 class Colors:
     HEADER = '\033[95m'
     BLUE = '\033[94m'
     GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
     END = '\033[0m'
     BOLD = '\033[1m'
 
@@ -29,101 +24,95 @@ def print_step(msg):
     print(f"\n{Colors.BLUE}>>> {msg}{Colors.END}")
 
 def print_success(msg):
-    print(f"{Colors.GREEN}  [PASS] {msg}{Colors.END}")
+    print(f"  {Colors.GREEN}[PASS]{Colors.END} {msg}")
 
 def print_warning(msg):
-    print(f"{Colors.YELLOW}  [WARN] {msg}{Colors.END}")
+    print(f"  {Colors.WARNING}[WARN]{Colors.END} {msg}")
 
 def print_error(msg, tip=None):
-    print(f"{Colors.RED}  [FAIL] {msg}{Colors.END}")
+    print(f"  {Colors.FAIL}[FAIL]{Colors.END} {msg}")
     if tip:
         print(f"         💡 Tip: {tip}")
 
-async def run_diagnostics():
-    print(f"{Colors.HEADER}{Colors.BOLD}")
-    print("="*60)
-    print("      🔍 IMMERSIVERAG END-TO-END DIAGNOSTICS      ")
-    print("="*60)
-    print(f"{Colors.END}")
+def check_network(host, port=443):
+    import socket
+    try:
+        socket.setdefaulttimeout(3)
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((host, port))
+        return True
+    except Exception:
+        return False
 
-    # 🟢 STEP 1: OS & Environment
+def main():
+    print("\n" + "="*60)
+    print(f"{Colors.HEADER}{Colors.BOLD}      🔍 IMMERSIVERAG END-TO-END DIAGNOSTICS (SYNC)      {Colors.END}")
+    print("="*60 + "\n")
+
+    # 🟢 STEP 1: System Info
     print_step("Checking System & Environment...")
     print(f"  - Platform: {platform.system()} {platform.release()}")
-    print(f"  - Python: {sys.version.split()[0]}")
+    print(f"  - Python: {platform.python_version()}")
     print(f"  - Bypass SSL: {config.bypass_ssl_verify}")
     print(f"  - LLM Model: {config.llm_model}")
-    print(f"  - Proxy Detected: {os.environ.get('HTTPS_PROXY', 'None')}")
+    
+    # Check for proxies
+    proxy = os.environ.get('HTTP_PROXY') or os.environ.get('https_proxy')
+    print(f"  - Proxy Detected: {proxy or 'None'}")
 
-    # 🟢 STEP 2: Directory & Permission Check (For PermissionError [Errno 13])
+    # 🟢 STEP 2: File System & Qdrant Lock
     print_step("Checking File System Permissions...")
-    data_dir = Path(config.data_dir)
-    qdrant_dir = Path(config.qdrant_path)
+    qdrant_path = os.path.join(os.getcwd(), "data", "qdrant")
+    lock_file = os.path.join(qdrant_path, ".lock")
     
-    if not data_dir.exists():
-        print_warning(f"Data directory missing. Creating: {data_dir}")
-        data_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Check for Qdrant lock file
-    lock_file = qdrant_dir / ".lock"
-    if lock_file.exists():
-        print_error(
-            f"Qdrant Lock File Found: {lock_file}",
-            "This causes 'PermissionError: [Errno 13]'. Kill any stale python.exe processes!"
-        )
+    if os.path.exists(lock_file):
+        print_error(f"Qdrant Lock File Found: {lock_file}", 
+                    "This causes 'PermissionError: [Errno 13]'. Kill any stale python.exe processes!")
     else:
-        print_success("No Qdrant locks detected.")
+        print_success("Qdrant storage is clear of stale locks.")
 
     # 🟢 STEP 3: Network Connectivity
     print_step("Checking Network Connectivity...")
-    
-    def check_host(host, port=443):
-        try:
-            socket.create_connection((host, port), timeout=3)
-            return True
-        except:
-            return False
-
-    # Check common endpoints
-    hosts_to_check = {
+    connectivity = {
         "HuggingFace (Models)": "huggingface.co",
         "Groq (LLM)": "api.groq.com",
         "OpenAI (Direct)": "api.openai.com"
     }
-    
-    for name, host in hosts_to_check.items():
-        if check_host(host):
+    for name, host in connectivity.items():
+        if check_network(host):
             print_success(f"Network: Reachable to {name} ({host})")
         else:
-            print_warning(f"Network: {name} ({host}) is UNREACHABLE. This usually indicates VPN/Proxy issues.")
+            print_warning(f"Network: {name} ({host}) is unreachable. Check your VPN/Proxy.")
 
-    # 🟢 STEP 4: Qdrant Connection
+    # 🟢 STEP 4: Vector Store (Qdrant)
     print_step("Testing Vector Store (Qdrant)...")
     try:
-        client = get_qdrant_client()
+        from app.storage.vector_db import get_vector_client
+        client = get_vector_client()
         collections = client.get_collections()
-        print_success(f"Qdrant Connected. Collections: {[c.name for c in collections.collections]}")
+        print_success(f"Connected to Qdrant. Found {len(collections.collections)} collections.")
     except Exception as e:
-        print_error(f"Qdrant Connection Failed: {e}")
+        print_error(f"Vector DB Connection Failed: {e}")
 
-    # 🟢 STEP 5: Embedding Test (Local vs Cloud)
-    print_step("Testing Embedding Generation...")
+    # 🟢 STEP 5: Embedding Generation (FastEmbed)
+    print_step("Testing Local Embedding Generation (FastEmbed)...")
     try:
+        from app.engine.ingestion.embedder import generate_embeddings
+        test_text = ["This is a diagnostic test."]
         start = time.time()
-        # Test with a single string to see if it hangs
-        vectors = get_corporate_embeddings(["Diagnostic test message"])
-        print_success(f"Embedding generated (dim: {len(vectors[0])}). Time: {time.time()-start:.2f}s")
+        embs = generate_embeddings(test_text)
+        print_success(f"Generated embeddings (Dim: {embs.shape[1]}) in {time.time()-start:.2f}s")
     except Exception as e:
-        print_error(f"Embedding Failed: {e}", "In PwC, this usually means HuggingFace is blocked or requires SSL bypass.")
+        print_error(f"Embedding Generation Failed: {e}", "Ensure 'fastembed' is installed and you have internet for the initial model download.")
 
-    # 🟢 STEP 6: LLM Generation Test
-    print_step("Testing LLM generation (Official Client)...")
+    # 🟢 STEP 6: LLM Generation Test (Sync)
+    print_step("Testing LLM generation (Sync Client)...")
     try:
         start = time.time()
         client = get_llm_client()
-        response = await client.chat.completions.create(
+        response = client.chat.completions.create(
             model=config.llm_model,
-            messages=[{"role": "user", "content": "Write a 5 paragraph essay about the history of artificial intelligence. Be very descriptive."}],
-            max_tokens=2000, 
+            messages=[{"role": "user", "content": "Write a 5 paragraph essay about AI. Be descriptive."}],
+            max_tokens=2000,
             temperature=0.7
         )
         
@@ -134,7 +123,7 @@ async def run_diagnostics():
             
         content = response.choices[0].message.content
         if content is None:
-            print_warning("LLM returned 'None' content. Safety filter or safety settings might be too high.")
+            print_warning("LLM returned 'None' content. Check safety filters or proxy ceiling.")
             print(f"  - Finish Reason: {response.choices[0].finish_reason}")
             print(f"  - Refusal: {getattr(response.choices[0].message, 'refusal', 'None')}")
             print(f"  - Raw Message: {response.choices[0].message}")
@@ -147,22 +136,12 @@ async def run_diagnostics():
             
     except Exception as e:
         print_error(f"LLM Connection Failed: {e}")
-        # If possible, dump the error object attributes
         if hasattr(e, 'response'):
              print(f"  - Raw API Error Response: {e.response}")
 
     print("\n" + "="*60)
     print(f"{Colors.BOLD}DIAGNOSTICS COMPLETE.{Colors.END}")
-    print("="*60)
+    print("="*60 + "\n")
 
 if __name__ == "__main__":
-    if platform.system() == 'Windows':
-        # Fix for ProactorEventLoop in Windows
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
-    try:
-        asyncio.run(run_diagnostics())
-    except KeyboardInterrupt:
-        print("\nInterrupted.")
-    except Exception as e:
-        print(f"\nCritical failure: {e}")
+    main()

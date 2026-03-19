@@ -1,10 +1,8 @@
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
 from fastapi.concurrency import run_in_threadpool
-from typing import List, AsyncGenerator
+from typing import List
 from uuid import uuid4
 import json
-import asyncio
 
 from app.models.api_models import (
     AgentQueryRequest, AgentContextResponse, ContextChunk,
@@ -46,11 +44,11 @@ async def query_context(request: AgentQueryRequest):
     )
 
 
-# ── New Multi-Agent Chat Endpoint ──────────────────────────────────────
+# ── New Multi-Agent Chat Endpoint (Simplified Blocking) ────────────────
 @router.post("/chat", response_model=AgentChatResponse)
 async def agent_chat(request: AgentChatRequest):
     """
-    Full RAG + LLM generation pipeline via LangGraph.
+    Full RAG + LLM generation pipeline via LangGraph (Sync).
     Retrieves context from Qdrant, builds a prompt with conversation history,
     and generates an answer using the company LLM.
     """
@@ -59,10 +57,11 @@ async def agent_chat(request: AgentChatRequest):
     if not agent_def:
         raise HTTPException(status_code=404, detail=f"Agent '{request.agent_id}' not found.")
 
-    # 2. Run the LangGraph pipeline (Async)
+    # 2. Run the LangGraph pipeline (Sync via Threadpool to avoid blocking loop)
     from app.engine.agents.graph_runner import run_agent_graph
 
-    result = await run_agent_graph(
+    result = await run_in_threadpool(
+        run_agent_graph,
         question=request.question,
         agent_id=request.agent_id,
         session_id=request.session_id,
@@ -80,108 +79,8 @@ async def agent_chat(request: AgentChatRequest):
     )
 
 
-# ── Streaming Chat Endpoint (SSE) ────────────────────────────────────────────
-@router.post("/chat/stream")
-async def agent_chat_stream(request: AgentChatRequest):
-    """
-    Streaming variant of /agent/chat.
-    Returns Server-Sent Events:
-      - data: {"token": "..."} for each LLM token
-      - data: {"done": true, "context_chunks": [...], "cache_hit": bool} at the end
-    """
-    agent_def = _get_agent_definition(request.agent_id)
-    if not agent_def:
-        raise HTTPException(status_code=404, detail=f"Agent '{request.agent_id}' not found.")
+# 🚫 Chat Stream endpoint removed as per simplification request.
 
-    async def event_generator() -> AsyncGenerator[str, None]:
-        try:
-            # Padding to force proxy flush (1KB)
-            yield ":" + " " * 1024 + "\n\n"
-            yield f"data: {json.dumps({'token': '[CONNECTED] '})}\n\n"
-            from app.engine.agents.conversation_memory import ConversationMemory
-            from app.engine.retrieval.orchestrator import RetrievalOrchestrator
-            # Step 1: Retrieve context
-            orchestrator = RetrievalOrchestrator(
-                agent_id=request.agent_id,
-                session_id=request.session_id
-            )
-            from app.core.config import config as app_config
-            chunks, tokens_used, cache_hit = await run_in_threadpool(
-                orchestrator.retrieve,
-                query=request.question,
-                top_k=5,
-                max_tokens=app_config.max_context_tokens
-            )
-
-            # Step 2: Build prompt messages
-            memory = ConversationMemory(request.session_id, request.agent_id)
-            history_context = memory.build_history_context()
-
-            context_str = "No relevant documents found in the knowledge base."
-            if chunks:
-                context_str = "\n\n".join(
-                    f"[Chunk {i+1} | {c.score:.0%} match]\n{c.text}"
-                    for i, c in enumerate(chunks)
-                )
-
-            # System and User messages (OpenAI dictionary format)
-            messages = [{"role": "system", "content": agent_def["system_prompt"]}]
-            if history_context:
-                messages.append({"role": "system", "content": f"Conversation history:\n{history_context}"})
-            
-            messages.append({"role": "user", "content": f"Context from knowledge base:\n{context_str}\n\nUser question: {request.question}"})
-
-            # Step 3: Stream tokens from AsyncOpenAI
-            from app.engine.agents.llm_client import get_llm_client
-            client = get_llm_client()
-            full_answer = ""
-
-            response = await client.chat.completions.create(
-                model=app_config.llm_model,
-                messages=messages,
-                stream=True,
-                max_tokens=app_config.llm_max_answer_tokens,
-                temperature=0.3
-            )
-
-            async for chunk in response:
-                if not chunk.choices or not hasattr(chunk.choices[0], "delta"):
-                    continue
-                
-                delta = chunk.choices[0].delta
-                token = getattr(delta, "content", None)
-                
-                if token:
-                    full_answer += token
-                    yield f"data: {json.dumps({'token': token})}\n\n"
-                    # yield control to the event loop
-                    await asyncio.sleep(0)
-
-            # Step 4: Persist conversation turn
-            memory.append_turn("user", request.question)
-            memory.append_turn("assistant", full_answer)
-            memory.maybe_refresh_summary()
-
-            # Step 5: Send final event with metadata
-            final_event = {
-                "done": True,
-                "context_chunks": [c.model_dump() for c in chunks],
-                "cache_hit": cache_hit,
-                "tokens_used": tokens_used,
-            }
-            yield f"data: {json.dumps(final_event)}\n\n"
-
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        }
-    )
 
 @router.get("/registry", response_model=List[AgentDefinition])
 async def list_agents():

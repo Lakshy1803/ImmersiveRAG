@@ -74,74 +74,42 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
     abortRef.current = controller;
 
     try {
-      // PRO TIP: Bypass Next.js proxy if it buffers SSE. 
-      // Talk to 127.0.0.1:8000 directly (CORS is enabled on backend).
       const baseUrl = window.location.hostname === 'localhost' ? 'http://127.0.0.1:8000' : '';
-      console.log(`[Chat] Starting stream from ${baseUrl || 'proxy'}/agent/chat/stream...`);
+      console.log(`[Chat] Sending blocking request to ${baseUrl || 'proxy'}/agent/chat...`);
 
-      const res = await fetch(`${baseUrl}/agent/chat/stream`, {
+      const res = await fetch(`${baseUrl}/agent/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: userContent, agent_id: activeAgentId, session_id: sessionId }),
+        body: JSON.stringify({ 
+          question: userContent, 
+          agent_id: activeAgentId, 
+          session_id: sessionId 
+        }),
         signal: controller.signal,
       });
 
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      
+      const data = await res.json();
+      console.log('[Chat] Received response:', data);
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+      // Update the agent message with the full content
+      setMessages(prev => prev.map(m =>
+        m.id === agentMsgId 
+          ? { 
+              ...m, 
+              content: data.answer, 
+              streaming: false, 
+              chunks: data.context_chunks, 
+              cache_hit: data.cache_hit 
+            } 
+          : m
+      ));
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
-        
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith('data: ')) continue;
-          
-          try {
-            const raw = trimmed.slice(6);
-            const event = JSON.parse(raw);
-            console.log('[Stream] Received:', event);
-
-            if (event.token) {
-              if (event.token.includes('[CONNECTED]')) {
-                // Connection established, we know the backend is thinking
-                console.log('[Stream] Connection heartbeat received.');
-                continue;
-              }
-              setMessages(prev => prev.map(m =>
-                m.id === agentMsgId ? { ...m, content: m.content + event.token } : m
-              ));
-            } else if (event.done) {
-              console.log('[Stream] Finished. Context chunks:', event.context_chunks?.length);
-              const chunks: ChunkNode[] = event.context_chunks ?? [];
-              if (chunks.length > 0) onContextUpdate?.(chunks);
-              setMessages(prev => prev.map(m =>
-                m.id === agentMsgId
-                  ? { ...m, streaming: false, chunks, cache_hit: event.cache_hit }
-                  : m
-              ));
-            } else if (event.error) {
-              console.error('[Stream] Server error:', event.error);
-              setMessages(prev => prev.map(m =>
-                m.id === agentMsgId
-                  ? { ...m, content: `⚠️ ${event.error}`, streaming: false }
-                  : m
-              ));
-            }
-          } catch (e) {
-            console.warn('[Stream] Partial JSON or parse error:', e);
-          }
-        }
+      if (data.context_chunks?.length > 0) {
+        onContextUpdate?.(data.context_chunks);
       }
+
     } catch (err: unknown) {
       if ((err as Error).name === 'AbortError') return;
       const errMsg = err instanceof Error ? err.message : 'Connection failure.';

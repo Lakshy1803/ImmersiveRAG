@@ -11,11 +11,9 @@ import logging
 from typing import TypedDict, List, Optional
 
 from langgraph.graph import StateGraph, END
-from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.models.api_models import ContextChunk
 from app.engine.retrieval.orchestrator import RetrievalOrchestrator
-from app.engine.agents.llm_client import get_llm
 from app.engine.agents.conversation_memory import ConversationMemory
 from app.core.config import config
 
@@ -36,9 +34,8 @@ class AgentState(TypedDict):
 
 
 # ── Node 1: Retrieve ───────────────────────────────────────────────────
-async def retrieve_node(state: AgentState) -> dict:
+def retrieve_node(state: AgentState) -> dict:
     """Embeds the query and searches Qdrant via the existing orchestrator."""
-    # Orchestrator still uses a threadpool internally in retrieve if needed
     orchestrator = RetrievalOrchestrator(
         agent_id=state["agent_id"],
         session_id=state["session_id"]
@@ -58,7 +55,7 @@ async def retrieve_node(state: AgentState) -> dict:
 
 
 # ── Node 2: Generate ──────────────────────────────────────────────────
-async def generate_node(state: AgentState) -> dict:
+def generate_node(state: AgentState) -> dict:
     """Builds a minimal prompt and calls the official OpenAI client."""
     from app.engine.agents.llm_client import get_llm_client
     client = get_llm_client()
@@ -91,8 +88,9 @@ async def generate_node(state: AgentState) -> dict:
         f"User question: {state['question']}"
     )
     messages.append({"role": "user", "content": user_content})
+
     try:
-        response = await client.chat.completions.create(
+        response = client.chat.completions.create(
             model=config.llm_model,
             messages=messages,
             max_tokens=config.llm_max_answer_tokens,
@@ -113,7 +111,7 @@ async def generate_node(state: AgentState) -> dict:
 
 # ── Graph Builder ──────────────────────────────────────────────────────
 def _build_graph() -> StateGraph:
-    """Constructs the 2-node LangGraph StateGraph (Async)."""
+    """Constructs the 2-node LangGraph StateGraph (Sync)."""
     graph = StateGraph(AgentState)
 
     graph.add_node("retrieve", retrieve_node)
@@ -138,14 +136,14 @@ def _get_graph():
 
 
 # ── Public API ─────────────────────────────────────────────────────────
-async def run_agent_graph(
+def run_agent_graph(
     question: str,
     agent_id: str,
     session_id: str,
     system_prompt: str,
 ) -> dict:
     """
-    Runs the full RAG + LLM pipeline (Async).
+    Runs the full RAG + LLM pipeline (Sync).
 
     Returns:
         {
@@ -159,7 +157,7 @@ async def run_agent_graph(
     memory = ConversationMemory(session_id, agent_id)
     history_context = memory.build_history_context()
 
-    # Run the graph using ainvoke()
+    # Run the graph using invoke()
     graph = _get_graph()
     initial_state: AgentState = {
         "question": question,
@@ -173,7 +171,8 @@ async def run_agent_graph(
         "cache_hit": False,
     }
 
-    result = await graph.ainvoke(initial_state)
+    # Synchronous execution
+    result = graph.invoke(initial_state)
 
     # Persist conversation turns
     memory.append_turn("user", question)

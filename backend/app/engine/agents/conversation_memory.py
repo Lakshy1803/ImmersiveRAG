@@ -107,7 +107,7 @@ class ConversationMemory:
             return  # Only refresh every 4th turn, starting after 8 messages
 
         try:
-            from app.engine.agents.llm_client import get_sync_llm_client
+            from app.engine.agents.llm_client import get_llm_client
 
             # Get older messages (skip the last 4 which are "recent")
             with get_connection() as conn:
@@ -129,7 +129,7 @@ class ConversationMemory:
                 f"{r['role'].upper()}: {r['content'][:200]}" for r in older
             )
 
-            client = get_sync_llm_client()
+            client = get_llm_client()
             response = client.chat.completions.create(
                 model=config.llm_model,
                 messages=[
@@ -139,7 +139,8 @@ class ConversationMemory:
                 max_tokens=config.history_summary_max_tokens,
                 temperature=0.3
             )
-            summary = response.choices[0].message.content.strip()[:1024]
+            content = response.choices[0].message.content
+            summary = content.strip()[:1024] if content else ""
             self.save_summary_digest(summary)
             logger.info(f"Refreshed summary digest for session {self.session_id}")
 
