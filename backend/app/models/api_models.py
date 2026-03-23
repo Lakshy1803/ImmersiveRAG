@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
 from app.models.domain_models import JobStatus
 
-# --- Agent Interfaces ---
+# --- Agent Interfaces (Legacy — kept for backward compat) ---
 
 class AgentQueryRequest(BaseModel):
     question: str
@@ -35,3 +35,32 @@ class IngestStatusResponse(BaseModel):
     status: JobStatus
     message: Optional[str] = None
     error: Optional[str] = None
+
+# --- Multi-Agent Chat Interfaces (New) ---
+
+class AgentChatRequest(BaseModel):
+    question: str
+    agent_id: str = "doc_analyzer"
+    session_id: str = "default_session"
+
+class AgentChatResponse(BaseModel):
+    answer: str
+    context_chunks: List[ContextChunk] = Field(default_factory=list)
+    tokens_used: int = 0
+    cache_hit: bool = False
+
+class AgentDefinition(BaseModel):
+    agent_id: str
+    name: str
+    description: str = ""
+    system_prompt: str
+    icon: str = "smart_toy"
+    is_system: bool = False
+    base_agent_id: Optional[str] = None
+
+class AgentConfigRequest(BaseModel):
+    base_agent_id: str = "doc_analyzer"
+    name: str
+    system_prompt: str
+    description: str = ""
+

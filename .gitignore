@@ -1,8 +1,8 @@
-# Environments and Secrets
+# ── Secrets ────────────────────────────────────────────────────────────────
 backend/.env
-backend/.venv/
 
-# Python Cache & Build
+# ── Python ──────────────────────────────────────────────────────────────────
+backend/.venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -10,20 +10,28 @@ __pycache__/
 backend/immersive_rag.egg-info/
 backend/.pytest_cache/
 
-# Application Data & Temp
+# ── Application Runtime Data (auto-generated, not source code) ──────────────
 backend/data/
 backend/.tmp_data/
 backend/.llamaparse_images/
 backend/.e2e_runtime/
 backend/.e2e_runtime_design/
 
-# User & Testing Data
+# ── Test Artifacts ───────────────────────────────────────────────────────────
 .final_pdf_check/
 .user_pdf_test/
 
-# IDE
-.vscode/
+# ── Frontend ─────────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
 
-# OS
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+
+# ── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+desktop.ini

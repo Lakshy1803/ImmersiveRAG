@@ -1,8 +1,8 @@
 'use client';
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Database, Zap, BookOpen } from 'lucide-react';
-import { ImmersiveRagAPI, ChunkNode } from '@/lib/api';
-import { Spinner } from '../ui/Spinner';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { ChunkNode } from '@/lib/api';
 
 interface ChatMessage {
   id: string;
@@ -10,182 +10,275 @@ interface ChatMessage {
   content: string;
   chunks?: ChunkNode[];
   cache_hit?: boolean;
+  streaming?: boolean;
 }
 
-export function AgentChat() {
+interface AgentChatProps {
+  activeAgentId: string;
+  onContextUpdate?: (chunks: ChunkNode[]) => void;
+}
+
+export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([{
-     id: 'welcome',
-     role: 'agent',
-     content: 'I am the Local LangGraph Agent sandbox. Query the Qdrant semantic space directly!'
+    id: 'welcome',
+    role: 'agent',
+    content: 'Good morning, Executive. I am ready to analyze your documents. Upload files via the right panel, then ask me anything.',
   }]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
-
-  // Generate a stable sliding window ID for testing cache hits
   const [sessionId, setSessionId] = useState('');
+  const [expandedChunks, setExpandedChunks] = useState<Set<string>>(new Set());
+  const endRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    setSessionId(`sess_${Math.random().toString(36).substr(2, 6)}`);
+    setSessionId(`sess_${Math.random().toString(36).substr(2, 8)}`);
   }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Reset chat on agent switch
+  useEffect(() => {
+    setMessages([{
+      id: 'welcome',
+      role: 'agent',
+      content: 'Good morning, Executive. I am ready to analyze your documents. Upload files via the right panel, then ask me anything.',
+    }]);
+  }, [activeAgentId]);
+
+  const toggleChunks = (msgId: string) => {
+    setExpandedChunks(prev => {
+      const next = new Set(prev);
+      next.has(msgId) ? next.delete(msgId) : next.add(msgId);
+      return next;
+    });
+  };
+
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: input };
-    setMessages(prev => [...prev, userMsg]);
+    const userContent = input.trim();
+    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: userContent };
+    const agentMsgId = (Date.now() + 1).toString();
+
+    setMessages(prev => [...prev, userMsg, {
+      id: agentMsgId, role: 'agent', content: '', streaming: true,
+    }]);
     setInput('');
     setIsLoading(true);
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-       const res = await ImmersiveRagAPI.query(userMsg.content, sessionId, 'agent_demo_ui');
-       
-       if (res.extracted_context && res.extracted_context.length > 0) {
-          const agentMsg: ChatMessage = {
-             id: (Date.now() + 1).toString(),
-             role: 'agent',
-             content: `Retrieved ${res.extracted_context.length} relevant context shards within budget constraints (${res.total_tokens_used} tokens).`,
-             chunks: res.extracted_context,
-             cache_hit: res.cache_hit
-          };
-          setMessages(prev => [...prev, agentMsg]);
-       } else {
-         const emptyMsg: ChatMessage = {
-             id: (Date.now() + 1).toString(),
-             role: 'agent',
-             content: `No significant matches found in the local Qdrant instance.`,
-             cache_hit: res.cache_hit
-          };
-          setMessages(prev => [...prev, emptyMsg]);
-       }
+      const baseUrl = window.location.hostname === 'localhost' ? 'http://127.0.0.1:8000' : '';
+      console.log(`[Chat] Sending blocking request to ${baseUrl || 'proxy'}/agent/chat...`);
+
+      const res = await fetch(`${baseUrl}/agent/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          question: userContent, 
+          agent_id: activeAgentId, 
+          session_id: sessionId 
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      
+      const data = await res.json();
+      console.log('[Chat] Received response:', data);
+
+      // Update the agent message with the full content
+      setMessages(prev => prev.map(m =>
+        m.id === agentMsgId 
+          ? { 
+              ...m, 
+              content: data.answer, 
+              streaming: false, 
+              chunks: data.context_chunks, 
+              cache_hit: data.cache_hit 
+            } 
+          : m
+      ));
+
+      if (data.context_chunks?.length > 0) {
+        onContextUpdate?.(data.context_chunks);
+      }
 
     } catch (err: unknown) {
-       const errMsg = err instanceof Error
-         ? err.message
-         : typeof err === 'string'
-           ? err
-           : 'Could not connect to backend. Is the server running on port 8000?';
-       setMessages(prev => [...prev, {
-         id: (Date.now() + 1).toString(),
-         role: 'agent',
-         content: `Error: ${errMsg}`
-       }]);
+      if ((err as Error).name === 'AbortError') return;
+      const errMsg = err instanceof Error ? err.message : 'Connection failure.';
+      setMessages(prev => prev.map(m =>
+        m.id === agentMsgId
+          ? { ...m, content: `⚠️ System Error: ${errMsg}`, streaming: false }
+          : m
+      ));
     } finally {
-       setIsLoading(false);
+      setIsLoading(false);
+      abortRef.current = null;
     }
   };
 
   return (
-    <div className="flex flex-col h-[700px] max-h-[90vh] bg-slate-900 border border-slate-800 shadow-2xl rounded-xl overflow-hidden w-full max-w-3xl">
-      {/* Header */}
-      <div className="bg-slate-800/50 p-4 border-b border-slate-800 flex items-center justify-between">
-         <div className="flex items-center gap-3">
-             <div className="p-2 bg-indigo-500/20 rounded-lg">
-                <Bot className="w-5 h-5 text-indigo-400" />
-             </div>
-             <div>
-                <h2 className="font-semibold text-slate-100">Context Interrogation Sandbox</h2>
-                <p className="text-xs text-slate-400 flex items-center gap-1">
-                   <Database className="w-3 h-3" /> Session ID: {sessionId || 'Initializing...'}
-                </p>
-             </div>
-         </div>
-      </div>
-
+    <div className="flex flex-col flex-1 h-full w-full max-w-4xl mx-auto px-6 py-10">
       {/* Message Log */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      <div className="flex-1 overflow-y-auto pr-2 space-y-8 pb-32 custom-scrollbar">
         {messages.map((msg) => (
-          <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={msg.id} className={`flex items-start gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.role === 'agent' && (
-              <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex flex-shrink-0 flex-col items-center justify-center mt-1">
-                 <Bot className="w-4 h-4 text-indigo-400" />
+              <div className="w-10 h-10 rounded-xl bg-surface-container border border-outline-variant/30 flex-shrink-0 flex items-center justify-center shadow-md mt-1">
+                <span className="material-symbols-outlined text-lg text-primary" style={{ fontVariationSettings: '"FILL" 1' }}>smart_toy</span>
               </div>
             )}
-            
-            <div className={`max-w-[85%] flex flex-col gap-2`}>
+
+            <div className={`space-y-2 max-w-[85%] flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
               {msg.cache_hit && (
-                <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-amber-400 tracking-wider mb-1 ml-1 self-start">
-                   <Zap className="w-3 h-3" /> Local DB Hit (Cache Bypass)
+                <div className="flex items-center gap-1.5 text-[9px] uppercase font-bold text-primary tracking-[0.2em] mb-1 px-1">
+                  <span className="material-symbols-outlined text-[10px]">bolt</span> Cache Hit
                 </div>
               )}
-              
-              <div className={`p-4 rounded-xl ${
-                 msg.role === 'user' 
-                   ? 'bg-indigo-600/80 text-white rounded-tr-sm shadow-[0_0_20px_rgba(79,70,229,0.15)]' 
-                   : 'bg-slate-800 text-slate-200 rounded-tl-sm shadow-inner overflow-hidden'
-              } text-sm leading-relaxed`}
-              >
-                {msg.content}
-              </div>
-              
-              {/* Context Chunks Map */}
-              {msg.chunks && msg.chunks.length > 0 && (
-                <div className="flex flex-col gap-2 mt-2">
-                   {msg.chunks.map((chunk, idx) => (
-                      <div key={idx} className="bg-slate-950 border border-slate-700 p-3 rounded-lg hover:border-indigo-500/50 transition-colors">
-                         <div className="flex items-center justify-between mb-2">
-                             <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
-                                <BookOpen className="w-3 h-3" />
-                                UUID: {chunk.chunk_id?.substring(0, 8) ?? '?'}...
-                             </div>
-                             <span className="text-[10px] flex items-center justify-center bg-indigo-500/10 text-indigo-300 font-mono py-1 px-2 rounded">
-                                Score: {chunk.score.toFixed(3)}
-                             </span>
-                         </div>
-                         <p className="text-xs text-slate-300 leading-snug break-words">
-                            {chunk.text.length > 300 ? chunk.text.substring(0, 300) + '...' : chunk.text}
-                         </p>
+
+              {/* Message Bubble */}
+              <div className={`p-5 rounded-2xl border border-outline-variant/20 shadow-sm text-sm leading-relaxed ${
+                msg.role === 'user'
+                  ? 'bg-surface-container-highest rounded-tr-none text-on-surface'
+                  : 'bg-surface-container-low rounded-tl-none text-on-surface'
+              }`}>
+                {msg.role === 'user' ? (
+                  <p>{msg.content}</p>
+                ) : (
+                  <>
+                    {/* Rich Markdown Rendering */}
+                    <div className="prose prose-sm dark:prose-invert max-w-none
+                      prose-headings:text-on-surface prose-headings:font-bold prose-headings:mt-4 prose-headings:mb-2
+                      prose-h1:text-lg prose-h2:text-base prose-h3:text-sm
+                      prose-p:text-on-surface/90 prose-p:leading-relaxed prose-p:mb-3
+                      prose-strong:text-on-surface prose-strong:font-semibold
+                      prose-em:text-on-surface/80
+                      prose-ul:my-2 prose-ul:space-y-1 prose-ol:my-2 prose-ol:space-y-1
+                      prose-li:text-on-surface/90 prose-li:marker:text-primary
+                      prose-code:text-primary prose-code:bg-surface-container-high prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:font-mono
+                      prose-pre:bg-surface-container-high prose-pre:border prose-pre:border-outline-variant/30 prose-pre:rounded-xl prose-pre:p-4
+                      prose-blockquote:border-l-4 prose-blockquote:border-primary/40 prose-blockquote:pl-4 prose-blockquote:text-on-surface/60 prose-blockquote:italic
+                      prose-table:w-full prose-th:text-left prose-th:font-bold prose-th:text-on-surface prose-th:border-b prose-th:border-outline-variant/30 prose-th:pb-2
+                      prose-td:border-b prose-td:border-outline-variant/10 prose-td:py-2 prose-td:text-on-surface/80
+                      prose-hr:border-outline-variant/30
+                      prose-a:text-primary prose-a:underline">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
+
+                    {/* No cursor span here */}
+
+                    {/* Action buttons for completed agent messages */}
+                    {!msg.streaming && msg.id !== 'welcome' && (
+                      <div className="flex gap-2 mt-4 flex-wrap pt-3 border-t border-outline-variant/10">
+                        <button className="px-4 py-1.5 rounded-full bg-surface-container-high text-[9px] font-bold uppercase tracking-wider text-on-surface/50 hover:text-white hover:bg-primary border border-transparent transition-all shadow-sm">
+                          Generate PDF Report
+                        </button>
+                        <button className="px-4 py-1.5 rounded-full bg-surface-container-high text-[9px] font-bold uppercase tracking-wider text-on-surface/50 hover:text-white hover:bg-primary border border-transparent transition-all shadow-sm">
+                          Export Data
+                        </button>
                       </div>
-                   ))}
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Collapsible Source Chunks */}
+              {msg.chunks && msg.chunks.length > 0 && (
+                <div className="w-full">
+                  <button
+                    onClick={() => toggleChunks(msg.id)}
+                    className="flex items-center gap-1.5 text-[10px] text-on-surface/40 hover:text-primary transition-colors px-1 font-semibold"
+                  >
+                    <span className="material-symbols-outlined text-[12px]">
+                      {expandedChunks.has(msg.id) ? 'expand_less' : 'expand_more'}
+                    </span>
+                    Sources ({msg.chunks.length})
+                  </button>
+
+                  {expandedChunks.has(msg.id) && (
+                    <div className="mt-2 space-y-2">
+                      {msg.chunks.map((chunk, idx) => (
+                        <div key={idx} className="p-3 bg-surface-container rounded-xl border border-outline-variant/20 text-[11px]">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-primary font-bold px-2 py-0.5 bg-primary/10 rounded-full text-[9px]">
+                              {(chunk.score * 100).toFixed(0)}% match
+                            </span>
+                            <span className="text-on-surface/30 font-mono text-[9px]">
+                              chunk:{chunk.chunk_id?.substring(0, 10)}
+                            </span>
+                          </div>
+                          <p className="text-on-surface/60 leading-relaxed italic">
+                            "{chunk.text.length > 200 ? chunk.text.substring(0, 200) + '…' : chunk.text}"
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
+
+              <span className={`text-[10px] text-on-surface/30 px-1 font-mono uppercase tracking-widest ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                {msg.role === 'agent' ? 'Luminary' : 'Executive'} • {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
             </div>
 
             {msg.role === 'user' && (
-               <div className="w-8 h-8 rounded-full bg-purple-500 flex flex-shrink-0 flex-col items-center justify-center -mr-1 mt-1 shadow-lg shadow-purple-500/20">
-                 <User className="w-4 h-4 text-white" />
+              <div className="w-10 h-10 rounded-xl bg-surface-container-high border border-outline-variant/30 flex-shrink-0 flex items-center justify-center shadow-md mt-1">
+                <span className="material-symbols-outlined text-lg text-on-surface/80" style={{ fontVariationSettings: '"FILL" 1' }}>person</span>
               </div>
             )}
           </div>
         ))}
-        {isLoading && (
-           <div className="flex gap-4 p-4 items-center">
-             <Bot className="w-5 h-5 text-indigo-400/50 animate-pulse" />
-             <div className="bg-slate-800 py-3 px-4 rounded-xl text-xs text-slate-400 animate-pulse w-48 shadow-inner">
-               Querying Qdrant...
-             </div>
-           </div>
-        )}
         <div ref={endRef} />
       </div>
 
-      {/* Input */}
-      <form onSubmit={handleSend} className="p-4 bg-slate-800/80 border-t border-slate-800">
-        <div className="flex relative items-center justify-center rounded-xl bg-slate-950 overflow-hidden border border-slate-700 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
-           <input 
-             suppressHydrationWarning
-             type="text" 
-             value={input}
-             onChange={e => setInput(e.target.value)}
-             disabled={isLoading}
-             placeholder="Search knowledge layer... (e.g. What is the standard configuration?)"
-             className="w-full bg-transparent text-sm text-slate-100 placeholder-slate-500 p-4 focus:outline-none disabled:opacity-50"
-             autoComplete="off"
-           />
-           <button 
-             type="submit" 
-             disabled={!input.trim() || isLoading}
-             className="absolute right-2 p-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-700 disabled:text-slate-500 text-white transition-colors"
-           >
-             <Send className="w-4 h-4" />
-           </button>
+      {/* Input Section */}
+      <div className="fixed bottom-0 left-64 right-72 px-6 pb-8 pt-4 bg-gradient-to-t from-background via-background/90 to-transparent z-30 transition-colors">
+        <div className="max-w-4xl mx-auto">
+          <form onSubmit={handleSend} className="bg-surface-container dark:bg-surface-container/90 backdrop-blur-xl p-1.5 rounded-full flex items-center gap-2 border border-outline-variant shadow-xl dark:shadow-2xl transition-all h-[64px]">
+            <button type="button" className="w-11 h-11 flex items-center justify-center text-on-surface/50 hover:text-primary transition-all ml-2">
+              <span className="material-symbols-outlined">attach_file</span>
+            </button>
+            <input
+              suppressHydrationWarning
+              type="text"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              disabled={isLoading}
+              placeholder="Ask your agent anything..."
+              className="flex-1 bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-on-surface/40 text-sm py-4"
+              autoComplete="off"
+            />
+            {isLoading ? (
+              <button
+                type="button"
+                onClick={() => { abortRef.current?.abort(); setIsLoading(false); }}
+                className="h-11 px-6 bg-red-500/80 rounded-full flex items-center justify-center text-white hover:bg-red-600 active:scale-95 transition-all shadow-lg mr-1 text-xs font-bold gap-1.5"
+              >
+                <span className="material-symbols-outlined text-sm">stop</span>
+                Stop
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                className="h-11 px-8 bg-primary rounded-full flex items-center justify-center text-white hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-primary/20 mr-1 disabled:opacity-50 disabled:grayscale"
+              >
+                <span className="material-symbols-outlined text-base">send</span>
+              </button>
+            )}
+          </form>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

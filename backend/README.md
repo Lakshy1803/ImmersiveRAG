@@ -1,16 +1,8 @@
 # ImmersiveRAG Backend
 
-Python-first multimodal RAG backend for grounded question answering over PDFs and images.
+> **📢 IMPORTANT**: For full deployment and setup instructions, please refer to the central **[setup.md](file:///e:/Projects/ImmersiveRAG/setup.md)** in the root directory.
 
-The current stack is:
-- LlamaParse for document ingestion
-- local native fallback parsing for failure recovery
-- local Qdrant for text and image vector storage
-- LlamaIndex `MultiModalVectorStoreIndex` for multimodal retrieval
-- configurable embeddings
-- configurable OpenAI-compatible generation
-
-This README is the source of truth for local setup. When the stack changes, this file should be updated with the new setup path and config surface.
+This directory contains the Python-first multimodal RAG backend, built with FastAPI, LangGraph, and Qdrant.
 
 ## 1. Prerequisites
 
@@ -101,6 +93,10 @@ Parser behavior:
 - `IMMERSIVE_RAG_QDRANT_PATH=E:/Projects/ImmersiveRAG/backend/data/qdrant`
 - `IMMERSIVE_RAG_QDRANT_URL=...`
 - `IMMERSIVE_RAG_QDRANT_API_KEY=...`
+
+### Security / Networking
+
+- `IMMERSIVE_RAG_BYPASS_SSL_VERIFY=false` (Set to `true` to bypass certificate verification behind corporate proxies)
 
 ## 6. Run The API
 

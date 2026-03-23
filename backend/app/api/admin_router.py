@@ -147,13 +147,13 @@ async def view_qdrant_vectors(limit: int = 1):
 @router.delete("/debug/purge-vectors", summary="Wipe all vectors from Qdrant and reset job history")
 async def purge_all_vectors():
     """
-    DEBUG: Deletes and recreates the Qdrant collection, removing ALL indexed vectors.
-    Also marks all SQLite ingestion jobs as purged so they don't block re-ingestion.
-    Use this to clear stale mock/test data before uploading real documents.
+    DEBUG: Completely removes all Qdrant vector data (including on-disk files)
+    and clears all SQLite state (jobs, sessions, caches).
+    Use this for a full clean-slate reset before uploading new documents.
     """
-    from app.storage.vector_db import get_qdrant_client, COLLECTION_NAME, ensure_collection
-    import app.storage.vector_db as _vdb
+    from app.storage.vector_db import get_qdrant_client, COLLECTION_NAME, reset_qdrant_client, init_qdrant_collections
     from app.storage.relations_db import get_connection
+    from app.core.config import config
 
     qdrant = get_qdrant_client()
     deleted_count = 0
@@ -164,20 +164,33 @@ async def purge_all_vectors():
     except Exception:
         pass
 
-    try:
-        qdrant.delete_collection(COLLECTION_NAME)
-        # Recreate using the SAME client — do NOT open a second concurrent client
-        ensure_collection(qdrant)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to purge Qdrant collection: {e}")
+    # 1. Close the Qdrant client singleton — releases all file locks and internal caches
+    reset_qdrant_client()
 
-    # Also clean up SQLite job records so status tracking doesn't show stale state
+    # 2. Physically remove all on-disk Qdrant storage to guarantee zero residual data
+    qdrant_dir = config.qdrant_path
+    try:
+        if os.path.exists(qdrant_dir):
+            shutil.rmtree(qdrant_dir)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to remove Qdrant data directory: {e}")
+
+    # 3. Reinitialize clean collections with a fresh client
+    try:
+        init_qdrant_collections()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reinitialize Qdrant collections: {e}")
+
+    # 4. Wipe all SQLite state: jobs, session caches, session records, and conversation history
     with get_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute("DELETE FROM conversation_messages")
+        cursor.execute("DELETE FROM session_context_cache")
+        cursor.execute("DELETE FROM agent_sessions")
         cursor.execute("DELETE FROM ingestion_jobs")
         conn.commit()
 
     return {
-        "message": f"Purged {deleted_count} vectors from collection '{COLLECTION_NAME}' and cleared all job records. Re-upload your documents.",
+        "message": f"Purged {deleted_count} vectors. Qdrant storage wiped and recreated. All caches and job history cleared.",
         "vectors_deleted": deleted_count
     }

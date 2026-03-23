@@ -1,33 +1,96 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+
+:root {
+  --background: #F2F2F2;
+  --surface: #FFFFFF;
+  --surface-container: #F8F8F8;
+  --surface-container-low: #FBFBFB;
+  --surface-container-high: #F2F2F2;
+  --surface-container-highest: #E8E8E8;
+  --on-surface: #1B1C1C;
+  --on-surface-variant: #444746;
+  --primary: #EB8C00;
+  --primary-container: #E0301E;
+  --secondary: #E0301E;
+  --secondary-container: #EB8C00;
+  --outline: #D1D1D1;
+  --outline-variant: #E8E8E8;
+  --on-primary: #FFFFFF;
+}
+
+.dark {
+  --background: #121414;
+  --surface: #121414;
+  --surface-container: #1B1C1C;
+  --surface-container-low: #1E2020;
+  --surface-container-high: #2A2C2C;
+  --surface-container-highest: #333535;
+  --on-surface: #E3E2E2;
+  --on-surface-variant: #c4c7c5;
+  --primary: #EB8C00;
+  --primary-container: #E0301E;
+  --secondary: #E0301E;
+  --secondary-container: #EB8C00;
+  --outline: #444746;
+  --outline-variant: #444746;
+  --on-primary: #FFFFFF;
+}
+
+@theme {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-highest: var(--surface-container-highest);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-primary-container: var(--primary-container);
+  --color-primary: var(--primary);
+  --color-secondary-container: var(--secondary-container);
+  --color-secondary: var(--secondary);
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
+  --color-on-primary: var(--on-primary);
+
+  --font-inter: "Inter", sans-serif;
+  --radius-default: 0.125rem;
+  --radius-lg: 0.25rem;
+  --radius-xl: 0.5rem;
+  --radius-full: 9999px;
+}
 
 @layer base {
-  :root {
-    --background: #ffffff;
-    --foreground: #020617;
-  }
-  .dark {
-    --background: #020617;
-    --foreground: #f8fafc;
+  body {
+    @apply bg-surface text-on-surface font-inter antialiased overflow-hidden;
+    background-color: var(--color-background);
+    color: var(--color-on-surface);
   }
 }
 
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-}
+@layer utilities {
+  .glass-input {
+    background: color-mix(in srgb, var(--surface-container) 80%, transparent);
+    backdrop-filter: blur(20px);
+  }
 
-/* Custom modern scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--outline-variant);
+    border-radius: 10px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--outline);
+  }
 }

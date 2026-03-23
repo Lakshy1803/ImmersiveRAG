@@ -1,24 +1,53 @@
-# ImmersiveRAG — Company Setup Guide
+# ImmersiveRAG — Setup & Deployment Guide
 
-> This guide covers cloning the repo, configuring your company's embedding and LLM API keys, and running the full stack locally on a Windows machine.
+> Full-stack RAG + Multi-Agent AI platform. Runs entirely locally.  
+> **Stack**: FastAPI + LangGraph + Qdrant + Next.js 16
 
 ---
 
 ## Prerequisites
 
 | Tool | Version | Install |
-|------|---------|---------|
+|---|---|---|
 | Python | 3.11+ | [python.org](https://python.org) |
 | Node.js | 18+ | [nodejs.org](https://nodejs.org) |
 | Git | any | [git-scm.com](https://git-scm.com) |
-| VS Code (recommended) | any | [code.visualstudio.com](https://code.visualstudio.com) |
 
 ---
 
-## Step 1 — Clone the Repository
+## Architecture
+
+```
+Browser (localhost:3000)
+      │  /api/* → Next.js proxy rewrite
+      ▼
+FastAPI (127.0.0.1:8000)
+  ├── POST /admin/ingest          Ingestion pipeline → SQLite job queue
+  ├── APScheduler (every 5s)     embedder.py → Qdrant vector store
+  ├── POST /agent/chat/stream     SSE Streaming: retrieve → generate (Groq/OpenAI)
+  ├── GET  /agent/registry        Lists base + user-configured agents
+  ├── POST /agent/configure       Clone & customize agents (saved to SQLite)
+  └── DELETE /admin/debug/purge-vectors   Full wipe (Qdrant + SQLite)
+
+LangGraph Workflow (per chat message)
+  retrieve node → Chunk Retrieval (top-5)
+  generate node → StreamingResponse (SSE) → LLM answer tokens
+
+Memory (3 tiers)
+  T1: session_context_cache   Turn-level dedup (SQLite)
+  T2: conversation_messages   Full message log (SQLite)
+  T3: agent_sessions.summary  Rolling digest, refreshed every 4 turns
+
+Storage
+  backend/data/rag.db           SQLite (jobs, sessions, agents, cache, messages)
+  backend/data/qdrant/          On-disk Qdrant (384-dim FastEmbed or 1536-dim OpenAI)
+```
+
+---
+
+## Step 1 — Clone
 
 ```powershell
-# Clone from your company's GitHub
 git clone https://github.com/<your-org>/ImmersiveRAG.git
 cd ImmersiveRAG
 ```
@@ -27,58 +56,57 @@ cd ImmersiveRAG
 
 ## Step 2 — Backend Setup
 
-### 2a. Create the Python Virtual Environment
+### 2a. Create Virtual Environment
 
 ```powershell
 cd backend
-
-# Create venv using Python 3.11+
 python -m venv .venv
-
-# Activate
 .venv\Scripts\Activate.ps1
 ```
 
-> If you get a script execution policy error, run:
+> If you get a script policy error:  
 > `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
 
 ### 2b. Install Dependencies
 
 ```powershell
-# Install all declared packages from pyproject.toml
-pip install -e .
-
-# Also install these two runtime dependencies explicitly
-pip install aiofiles PyPDF2
+pip install -r requirements.txt
 ```
+
+> **Note:** First run downloads the FastEmbed model (~130 MB). This is automatic.
 
 ### 2c. Configure Environment Variables
 
-Create a `.env` file inside the `backend/` folder:
-
 ```powershell
-New-Item -Path "backend\.env" -ItemType File
+copy .env.example .env
 ```
 
-Open it and add your **company-provided** API credentials:
+Open `.env` and fill in your credentials:
 
 ```env
-# ── Company Embedding API (OpenAI-compatible) ──────────────────────────────
-IMMERSIVE_RAG_OPENAI_API_KEY=your-company-embedding-api-key-here
-IMMERSIVE_RAG_OPENAI_BASE_URL=https://your-company-api-gateway.example.com/v1
+# Required for LLM generation (Groq example — free at console.groq.com)
+IMMERSIVE_RAG_LLM_API_KEY=gsk_your_groq_key_here
+IMMERSIVE_RAG_LLM_BASE_URL=https://api.groq.com/openai/v1
+IMMERSIVE_RAG_LLM_MODEL=llama-3.3-70b-versatile
+
+# Optional: Corporate embedding API (falls back to FastEmbed if unset)
+IMMERSIVE_RAG_OPENAI_API_KEY=
+IMMERSIVE_RAG_OPENAI_BASE_URL=
 IMMERSIVE_RAG_EMBEDDING_MODEL=text-embedding-3-small
 
-# ── Company LLM Reasoning API (Generation Model) ──────────────────────────
-# Used if you extend the agent to generate answers (not just retrieve chunks)
-IMMERSIVE_RAG_LLM_API_KEY=your-company-llm-api-key-here
-IMMERSIVE_RAG_LLM_BASE_URL=https://your-company-api-gateway.example.com/v1
-IMMERSIVE_RAG_LLM_MODEL=gpt-4o
+# Optional: LlamaParse cloud PDF extraction
+IMMERSIVE_RAG_LLAMA_PARSE_API_KEY=
 
-# ── Optional: LlamaParse Cloud (for high-fidelity PDF extraction) ──────────
-IMMERSIVE_RAG_LLAMA_PARSE_API_KEY=your-llamaparse-key-here
+# Optional: Security / Networking (set to true to bypass corporate proxy SSL errors)
+IMMERSIVE_RAG_BYPASS_SSL_VERIFY=false
 ```
 
-> **Note:** If `IMMERSIVE_RAG_OPENAI_API_KEY` is not set, the system automatically falls back to **local FastEmbed** (384-dim, no key needed). This is safe for initial testing.
+> **Supported LLM providers** (all OpenAI-compatible):
+> | Provider | BASE_URL | Example Model |
+> |---|---|---|
+> | **Groq** (recommended, free) | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
+> | **OpenAI** | `https://api.openai.com/v1` | `gpt-4o` |
+> | **Azure OpenAI** | `https://<resource>.openai.azure.com/openai/deployments/<model>` | `gpt-4o` |
 
 ---
 
@@ -86,145 +114,151 @@ IMMERSIVE_RAG_LLAMA_PARSE_API_KEY=your-llamaparse-key-here
 
 ```powershell
 cd ..\frontend
-
-# Install Node dependencies
 npm install
 ```
 
-No `.env` file is needed for the frontend — the Next.js proxy rewrites all `/api/*` calls to `http://127.0.0.1:8000` automatically via `next.config.ts`.
+No `.env` file needed — Next.js proxies all `/api/*` calls to `http://127.0.0.1:8000` automatically via `next.config.ts`.
 
 ---
 
 ## Step 4 — Run the Stack
 
-Open **two separate PowerShell terminals**:
+Open **two PowerShell terminals**:
 
-### Terminal 1 — Start the Backend
-
+**Terminal 1 — Backend**
 ```powershell
-cd e:\<your-path>\ImmersiveRAG\backend
+cd ImmersiveRAG\backend
 .venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
-
 ✅ Wait for: `INFO: Application startup complete.`
 
-### Terminal 2 — Start the Frontend
-
+**Terminal 2 — Frontend**
 ```powershell
-cd e:\<your-path>\ImmersiveRAG\frontend
-$env:PATH += ";C:\Program Files\nodejs"   # only needed if node isn't on PATH
-npm run dev -- -p 3000
+cd ImmersiveRAG\frontend
+npm run dev
 ```
-
-✅ Wait for: `▲ Next.js ... ✓ Ready in ~2s`
+✅ Wait for: `▲ Next.js ... ✓ Ready`
 
 ---
 
-## Step 5 — Access the Application
+## Step 5 — Access
 
 | Service | URL |
-|---------|-----|
+|---|---|
 | **Dashboard UI** | http://localhost:3000 |
 | **Swagger API Docs** | http://127.0.0.1:8000/docs |
 
 ---
 
-## Step 6 — Choosing Ingestion Mode
+## Step 6 — Using the Application
 
-When you open the dashboard, you'll see two configuration panels:
+### Upload Documents
+1. Right panel → drag-and-drop a `.pdf` or `.txt`
+2. Choose: **Extraction** (Local Fallback or LlamaParse) and **Embedding** (FastEmbed or Corporate API)
+3. Status → `queued → processing → embedding_and_indexing → Complete ✅`
 
-### Extraction Provider
-| Option | When to Use |
-|--------|-------------|
-| **Local Fallback** | Default — uses PyPDF2 (PDF) or plain text read. No API key needed. Works offline. |
-| **LlamaParse (Cloud)** | High-fidelity Markdown extraction. Requires `IMMERSIVE_RAG_LLAMA_PARSE_API_KEY`. |
+> ⚠️ Don't mix embedding modes. If you switch, purge first (see below).
 
-### Vector Embedding Strategy
-| Option | When to Use |
-|--------|-------------|
-| **FastEmbed (Local)** | Default — 384-dim local model. Zero latency. No API key needed. |
-| **OpenAI (Corporate API)** | 1536-dim company embedding model. Requires `IMMERSIVE_RAG_OPENAI_API_KEY` and `IMMERSIVE_RAG_OPENAI_BASE_URL`. |
+### Chat with Agents
+1. **Select an agent** from the top-left dropdown (Document Analyzer or General Assistant)
+2. Type your question — the agent retrieves context from Qdrant and generates an answer via Groq
+3. Click **Sources (N)** below each answer to see the matched document chunks
 
-> ⚠️ Do not mix embedding modes across uploads. If you re-ingest with a different mode, purge first: `DELETE /admin/debug/purge-vectors` in Swagger.
-
----
-
-## Step 7 — Upload and Test
-
-1. Select your preferred modes (Local Fallback + FastEmbed for first test)
-2. Drag and drop a `.pdf` or `.txt` file onto the upload zone
-3. Watch the status: `processing` → `embedding_and_indexing` → **Complete ✅**
-4. In the right panel, type a question about your document
-5. The agent returns matching paragraph-level chunks with similarity scores
+### Configure Custom Agents
+1. Open the dropdown → **Configure New Agent**
+2. Choose a base agent, set a name and custom system prompt
+3. Your agent is saved and immediately available in the dropdown
 
 ---
 
 ## Resetting the Vector Store
 
-If you need a clean slate (after a bad ingestion run, or when switching embedding providers):
-
 ```
 DELETE http://127.0.0.1:8000/admin/debug/purge-vectors
 ```
+Or via Swagger: `DELETE /admin/debug/purge-vectors → Try it out → Execute`
 
-Or from Swagger UI: `DELETE /admin/debug/purge-vectors` → Try it out → Execute.
-
-This deletes all vectors from Qdrant and clears the SQLite job history.
+This physically deletes the Qdrant data directory and clears all SQLite state (jobs, sessions, caches, conversation history). Use before switching embedding modes.
 
 ---
 
-## Gitignore Checklist
+## Ingestion Mode Reference
 
-Ensure these are in your `.gitignore` before pushing:
-
-```gitignore
-# Python
-backend/.venv/
-backend/__pycache__/
-backend/**/__pycache__/
-
-# Runtime data
-backend/data/
-backend/.env
-
-# Node
-frontend/node_modules/
-frontend/.next/
-
-# Misc
-*.pyc
-.DS_Store
-```
+| Mode | Description | Requires |
+|---|---|---|
+| Local Fallback (extraction) | PyPDF2 / plain text | Nothing |
+| LlamaParse (extraction) | High-fidelity Markdown | `IMMERSIVE_RAG_LLAMA_PARSE_API_KEY` |
+| FastEmbed (embedding) | 384-dim local model | Nothing |
+| Corporate API (embedding) | 1536-dim OpenAI-compat | `IMMERSIVE_RAG_OPENAI_API_KEY` + `IMMERSIVE_RAG_OPENAI_BASE_URL` |
 
 ---
 
 ## Common Errors
 
 | Error | Fix |
-|-------|-----|
-| `No module named 'aiofiles'` | Run: `pip install aiofiles PyPDF2` in the backend `.venv` |
-| `Collection rag_text not found` | Restart backend — it auto-creates collections on startup |
-| Chat shows `Error: Could not connect to backend` | Make sure backend is running on port 8000 |
-| Upload stuck at `embedding_and_indexing` | APScheduler polls every 5s — wait 10s. If stuck, restart backend |
-| `fdprocessedid` hydration warning | Harmless — caused by browser password manager extensions |
-| Vectors found but no query match | Chunk too large — ensure you are on the latest `chunker.py`. Purge and re-ingest |
-| `OpenAI API error` with company key | Verify `IMMERSIVE_RAG_OPENAI_BASE_URL` ends with `/v1` and key is correct |
+|---|---|
+| `IMMERSIVE_RAG_LLM_API_KEY is not set` | Add your Groq/OpenAI key to `backend/.env` |
+| `Collection rag_text not found` | Restart backend — collections are auto-created on startup |
+| Chat returns `System Error: ...` | Check backend terminal for traceback; verify LLM key is valid |
+| Upload stuck at `embedding_and_indexing` | APScheduler polls every 5s — wait 10s. Restart backend if stuck |
+| Vectors found but no match | Purge and re-ingest; ensure embedding mode hasn't changed |
+| `fdprocessedid` hydration warning | Harmless — caused by browser extension |
+| `OpenAI API error` with corporate key | Verify `BASE_URL` ends with `/v1` and key is correct |
+| `summary_digest` column error | Restart backend — auto-migration runs on startup |
+| `[SSL: CERTIFICATE_VERIFY_FAILED]` | Set `IMMERSIVE_RAG_BYPASS_SSL_VERIFY=true` in `.env` |
 
 ---
 
-## Architecture Overview (Quick Reference)
+## Project Structure
 
 ```
-Browser (localhost:3000)
-      │ /api/* (Next.js proxy rewrite)
-      ▼
-FastAPI (127.0.0.1:8000)
-  ├── POST /admin/ingest        → pipeline.py → chunker.py → SQLite
-  ├── APScheduler (every 5s)   → embedder.py → Qdrant
-  ├── POST /agent/query         → orchestrator.py → session_cache → Qdrant
-  └── GET  /admin/debug/*       → inspection endpoints
-
-Storage
-  ├── data/rag.db              SQLite (jobs, sessions, cache)
-  └── data/qdrant/             Local Qdrant vector store (on-disk, 384 or 1536-dim)
+ImmersiveRAG/
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── admin_router.py      Ingestion, purge, debug endpoints
+│   │   │   └── agent_router.py      Chat, registry, configure endpoints
+│   │   ├── core/
+│   │   │   ├── config.py            AppConfig (pydantic-settings)
+│   │   │   └── scheduler.py         APScheduler background jobs
+│   │   ├── engine/
+│   │   │   ├── agents/
+│   │   │   │   ├── graph_runner.py  LangGraph 2-node workflow
+│   │   │   │   ├── llm_client.py    ChatOpenAI singleton (Groq/Azure/OpenAI)
+│   │   │   │   └── conversation_memory.py  3-tier memory manager
+│   │   │   ├── ingestion/           parser, chunker, embedder, pipeline
+│   │   │   ├── retrieval/           orchestrator, session_cache
+│   │   │   └── memory/              (future expansion)
+│   │   ├── models/
+│   │   │   ├── api_models.py        Pydantic request/response schemas
+│   │   │   └── domain_models.py     Internal domain models
+│   │   ├── storage/
+│   │   │   ├── relations_db.py      SQLite init, schema, migrations
+│   │   │   └── vector_db.py         Qdrant client singleton + reset
+│   │   └── main.py                  FastAPI app factory
+│   ├── data/                        ← gitignored (auto-generated)
+│   │   ├── rag.db                   SQLite database
+│   │   └── qdrant/                  On-disk vector store
+│   ├── .env                         ← gitignored (your secrets)
+│   ├── .env.example                 Template for new deployments
+│   └── requirements.txt             Python dependencies
+│
+└── frontend/
+    ├── src/
+    │   ├── app/
+    │   │   ├── page.tsx             Root page — agent state management
+    │   │   └── globals.css          Corporate Luminary design system
+    │   ├── components/
+    │   │   ├── Navigation/
+    │   │   │   ├── Header.tsx       Top bar with PwC logo + theme toggle
+    │   │   │   ├── SidebarLeft.tsx  Agent selector dropdown
+    │   │   │   └── SidebarRight.tsx Context viewer + document uploader
+    │   │   ├── Chat/
+    │   │   │   └── AgentChat.tsx    Chat UI with LLM answers + sources
+    │   │   └── Agents/
+    │   │       └── AgentConfigModal.tsx  Clone + customize agent modal
+    │   └── lib/
+    │       └── api.ts               Typed API client (all endpoints)
+    ├── next.config.ts               /api/* → 127.0.0.1:8000 proxy
+    └── package.json
 ```

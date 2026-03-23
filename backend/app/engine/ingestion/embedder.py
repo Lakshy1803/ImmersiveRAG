@@ -26,7 +26,12 @@ def get_corporate_embeddings(texts: List[str], embedding_mode: str = "local_fast
         logger.info("Corporate API Key missing. Using FastEmbed locally for embeddings.")
         global _fastembed_model
         if _fastembed_model is None:
-            # We lazy-load to avoid initializing it when not needed
+            # Handle SSL verification bypass specifically for the first-time model download
+            if config.bypass_ssl_verify:
+                import ssl
+                logger.warning("Bypassing SSL verification for local model download (PwC compliance).")
+                ssl._create_default_https_context = ssl._create_unverified_context
+                
             from fastembed import TextEmbedding
             # BAAI/bge-small-en-v1.5 has an embedding dimension of 384
             _fastembed_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
@@ -35,14 +40,13 @@ def get_corporate_embeddings(texts: List[str], embedding_mode: str = "local_fast
         embeddings_generator = _fastembed_model.embed(texts)
         return [vector.tolist() for vector in embeddings_generator]
 
-    # Otherwise, use the corporate API via the OpenAI client wrapper
+    # Otherwise, use the corporate API via the OpenAI client wrapper (STRICT SSL)
     logger.info(f"Using corporate API (OpenAI client) with model: {model}")
     client_kwargs = {"api_key": api_key}
     
-    # If a custom base URL is provided (e.g. Azure, Local Proxy, etc.)
     if base_url:
         client_kwargs["base_url"] = base_url
-        
+
     client = OpenAI(**client_kwargs)
     
     try:

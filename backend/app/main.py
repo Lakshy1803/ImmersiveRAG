@@ -7,8 +7,18 @@ from app.api.admin_router import router as admin_router
 from app.api.agent_router import router as agent_router
 from app.core.scheduler import start_scheduler, stop_scheduler
 
+
+from app.storage.vector_db import init_qdrant_collections
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Phase 0: Initialize Qdrant Collections
+    try:
+        init_qdrant_collections()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Failed to initialize Qdrant: {e}")
+
     # Phase 5: Initialize the APScheduler here
     start_scheduler()
     yield

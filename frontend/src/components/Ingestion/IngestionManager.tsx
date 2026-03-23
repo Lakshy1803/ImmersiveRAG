@@ -4,7 +4,7 @@ import { ConfigPanel, IngestionConfig } from './ConfigPanel';
 import { UploadZone } from './UploadZone';
 import { ImmersiveRagAPI, JobStatus } from '@/lib/api';
 
-export function IngestionManager() {
+export function IngestionManager({ compact = false }: { compact?: boolean }) {
   const [config, setConfig] = useState<IngestionConfig>({
     extraction_mode: 'local_markdown',
     embedding_mode: 'local_fastembed',
@@ -26,7 +26,6 @@ export function IngestionManager() {
            setError(result.error);
         }
       } catch (err: any) {
-        // Log polling errors so we don't repeatedly crash the UI
         console.error("Polling error:", err);
       }
     }, 3000);
@@ -36,7 +35,7 @@ export function IngestionManager() {
 
   const handleFileUpload = async (file: File) => {
     setError(null);
-    setStatus('processing'); // Set early to give immediate feedback
+    setStatus('processing'); 
     try {
       const response = await ImmersiveRagAPI.ingest(file, config);
       setJobId(response.job_id);
@@ -50,18 +49,21 @@ export function IngestionManager() {
   const isUploading = status !== 'idle' && status !== 'complete' && status !== 'failed';
 
   return (
-    <div className="flex flex-col gap-6 w-full max-w-xl">
-      <div className="flex flex-col">
-         <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
-           Document Control Plane
-         </h1>
-         <p className="text-slate-400 text-sm mt-1">Configure and index enterprise documents into the local vector layer safely.</p>
-      </div>
+    <div className={`flex flex-col gap-4 w-full ${compact ? '' : 'max-w-xl'}`}>
+      {!compact && (
+        <div className="flex flex-col mb-2">
+           <h1 className="text-2xl font-bold text-on-surface">
+             Document Control Plane
+           </h1>
+           <p className="text-on-surface/50 text-sm mt-1">Configure and index enterprise documents into the local vector layer safely.</p>
+        </div>
+      )}
       
       <ConfigPanel 
         config={config} 
         onChange={setConfig} 
         disabled={isUploading} 
+        compact={compact}
       />
       
       <UploadZone 
@@ -69,6 +71,7 @@ export function IngestionManager() {
         disabled={isUploading} 
         status={status}
         error={error}
+        compact={compact}
       />
     </div>
   );

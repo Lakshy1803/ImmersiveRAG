@@ -13,10 +13,11 @@ class AppConfig(BaseSettings):
     api_title: str = "ImmersiveRAG Shared Context API"
     api_version: str = "v1.0"
 
-    # Storage and DB paths (always absolute — derived from this file's location)
+    # Storage and DB paths
     data_dir: str = str(_DATA_DIR)
     sqlite_db_path: str = f"sqlite:///{_DATA_DIR / 'rag.db'}"
     qdrant_path: str = str(_DATA_DIR / "qdrant")
+    qdrant_url: Optional[str] = Field(default=None, env="IMMERSIVE_RAG_QDRANT_URL")
 
     # Ingestion Configuration
     llamaparse_api_key: Optional[str] = Field(default=None, env="IMMERSIVE_RAG_LLAMA_PARSE_API_KEY")
@@ -39,6 +40,14 @@ class AppConfig(BaseSettings):
     max_context_tokens: int = Field(default=4000, description="Max tokens returned to the agent")
     session_timeout_minutes: int = Field(default=30)
     sliding_window_size: int = Field(default=10, description="Max recent queries kept in session memory")
+
+    # Agent Generation Budget
+    llm_max_answer_tokens: int = Field(default=512, description="Max tokens for LLM answer generation")
+    history_summary_max_tokens: int = Field(default=256, description="Max tokens for rolling conversation summary")
+
+    # Security / Networking
+    # Set to True to bypass SSL certificate verification (e.g. corporate proxy issues)
+    bypass_ssl_verify: bool = Field(default=False, env="IMMERSIVE_RAG_BYPASS_SSL_VERIFY")
 
     class Config:
         # Absolute path so .env is found regardless of where uvicorn is launched from

@@ -26,12 +26,20 @@ class RetrievalOrchestrator:
         self.session_id = session_id
         self.cache = EphemeralSessionCache(session_id, agent_id)
 
-    def retrieve(self, query: str, top_k: int = 5, max_tokens: int = 4000) -> tuple[List[ContextChunk], int, bool]:
+    def retrieve(
+        self,
+        query: str,
+        top_k: int = 5,
+        max_tokens: int = 4000,
+        top_k_candidates: int = 20,
+    ) -> tuple[List[ContextChunk], int, bool]:
         """
         Orchestrates the retrieval process:
-        1. Query cache
-        2. If miss, Query Qdrant
-        3. Enforce token budget
+        1. Check ephemeral cache
+        2. Query Qdrant for top_k_candidates (broad net)
+        3. Cross-encoder re-rank → top_k (precision filter)
+        4. Enforce token budget
+        5. Save to cache
         """
         # 1. Ephemeral Memory Check
         cached = self.cache.get_cached_context(query)
@@ -42,25 +50,21 @@ class RetrievalOrchestrator:
 
         # 2. Vector DB Query
         from app.engine.ingestion.embedder import get_corporate_embeddings
-        from app.storage.vector_db import get_qdrant_client
-        
-        # Embed the incoming query (returns a list of list, we take the first)
         query_vector = get_corporate_embeddings([query])[0]
-        
+
         client = get_qdrant_client()
         search_result = client.query_points(
             collection_name="rag_text",
             query=query_vector,
-            limit=top_k
+            limit=top_k  # Direct retrieval: top_k (no re-ranking)
         )
-        
+
         raw_results = []
         for scored_point in search_result.points:
-            # Safely extract payload which was set during ingestion
             payload = scored_point.payload or {}
             chunk_text = payload.get("text", "")
             doc_id = payload.get("job_id", "unknown_doc")
-            
+
             raw_results.append(
                 ContextChunk(
                     chunk_id=str(scored_point.id),
@@ -70,21 +74,23 @@ class RetrievalOrchestrator:
                 )
             )
 
-        # 3. Token Budgeting (Truncate low-score evidence if it exceeds bounds)
+        # 3. No re-ranking in this version
+        reranked = raw_results
+
+        # 4. Token Budgeting
         final_chunks = []
         accumulated_tokens = 0
 
-        for chunk in raw_results:
+        for chunk in reranked:
             tokens = count_tokens(chunk.text)
             if accumulated_tokens + tokens <= max_tokens:
                 final_chunks.append(chunk)
                 accumulated_tokens += tokens
             else:
                 logger.warning(f"Dropping chunk {chunk.chunk_id} to enforce {max_tokens} token limit.")
-                # We could partially truncate `chunk.text` here instead of full drop, but dropping is safer for context bounds
                 break
 
-        # 4. Save to Sliding Window Memory
+        # 5. Save to Sliding Window Cache
         self.cache.save_context(query, {
             "chunks": [c.model_dump() for c in final_chunks],
             "tokens_used": accumulated_tokens
