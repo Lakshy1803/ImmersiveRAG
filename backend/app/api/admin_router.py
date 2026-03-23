@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
 from typing import Dict, Any, Optional
+from pydantic import BaseModel
 import os
 import shutil
 
@@ -9,6 +10,20 @@ from app.api.dependencies import get_config
 from app.core.config import AppConfig
 from app.engine.ingestion.pipeline import IngestionPipelineManager
 from uuid import uuid4
+
+class AdminConfigResponse(BaseModel):
+    embedding_model: str
+    generation_model: str
+    max_context_tokens: int
+    llm_max_answer_tokens: int
+    sliding_window_size: int
+    temperature: float = 0.3
+    top_k: int = 5
+
+class QdrantStatsResponse(BaseModel):
+    collection_name: str
+    vector_count: int
+    status: str
 
 router = APIRouter(prefix="/admin", tags=["Admin & Ingestion"])
 
@@ -60,6 +75,88 @@ async def start_ingestion(
         status=JobStatus.PROCESSING,
         message="File uploaded successfully. Processing will continue seamlessly in the background."
     )
+
+@router.post("/ingest/bulk", response_model=Dict[str, Any])
+async def start_bulk_ingestion(
+    background_tasks: BackgroundTasks,
+    files: list[UploadFile] = File(...),
+    tenant_id: str = Form("default"),
+    collection_id: str = Form("default"),
+    extraction_mode: str = Form("local_markdown"),
+    embedding_mode: str = Form("local_fastembed"),
+    config: AppConfig = Depends(get_config)
+):
+    """
+    Bulk ingest multiple files at once. 
+    Returns a dictionary of tracking objects.
+    """
+    upload_dir = os.path.join(config.data_dir, "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    manager = IngestionPipelineManager()
+    jobs = []
+    
+    for file in files:
+        safe_filename = file.filename or "unknown_upload.bin"
+        file_path = os.path.join(upload_dir, f"{uuid4().hex}_{safe_filename}")
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        request_data = DocumentIngestRequest(
+            source_path=file_path,
+            filename=safe_filename,
+            content_type=file.content_type or "application/octet-stream",
+            tenant_id=tenant_id,
+            collection_id=collection_id,
+            extraction_mode=extraction_mode,
+            embedding_mode=embedding_mode
+        )
+        
+        job = manager.create_job(request=request_data)
+        background_tasks.add_task(manager.execute_parsing_stage, job.job_id)
+        
+        jobs.append({
+            "filename": safe_filename,
+            "job_id": job.job_id,
+            "status": job.status.value
+        })
+        
+    return {
+        "message": f"Successfully queued {len(jobs)} files for ingestion.",
+        "jobs": jobs
+    }
+
+@router.get("/config/current", response_model=AdminConfigResponse)
+async def get_current_config(config: AppConfig = Depends(get_config)):
+    """Returns the current public configuration for display in Model Settings UI."""
+    return AdminConfigResponse(
+        embedding_model=config.embedding_model,
+        generation_model=config.llm_model,
+        max_context_tokens=config.max_context_tokens,
+        llm_max_answer_tokens=config.llm_max_answer_tokens,
+        sliding_window_size=config.sliding_window_size,
+    )
+
+@router.get("/qdrant/stats", response_model=QdrantStatsResponse)
+async def get_qdrant_stats():
+    """Returns basic stats about the Qdrant vector store collections."""
+    from app.storage.vector_db import get_qdrant_client, COLLECTION_NAME
+    
+    try:
+        qdrant = get_qdrant_client()
+        info = qdrant.get_collection(COLLECTION_NAME)
+        return QdrantStatsResponse(
+            collection_name=COLLECTION_NAME,
+            vector_count=info.points_count or 0,
+            status="green" if info.status and info.status.value == "green" else str(info.status)
+        )
+    except Exception as e:
+        return QdrantStatsResponse(
+            collection_name=COLLECTION_NAME,
+            vector_count=0,
+            status=f"offline: {e}"
+        )
 
 @router.get("/ingest/{job_id}/status", response_model=IngestStatusResponse)
 async def get_job_status(job_id: str):

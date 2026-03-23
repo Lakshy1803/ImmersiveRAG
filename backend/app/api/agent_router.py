@@ -3,6 +3,11 @@ from fastapi.concurrency import run_in_threadpool
 from typing import List
 from uuid import uuid4
 import json
+from pydantic import BaseModel
+from fastapi.responses import Response
+
+class ExportRequest(BaseModel):
+    content: str
 
 from app.models.api_models import (
     AgentQueryRequest, AgentContextResponse, ContextChunk,
@@ -66,6 +71,7 @@ async def agent_chat(request: AgentChatRequest):
         agent_id=request.agent_id,
         session_id=request.session_id,
         system_prompt=agent_def["system_prompt"],
+        model_settings=agent_def.get("model_settings", {})
     )
 
     # 3. Map raw chunk dicts back to ContextChunk models
@@ -88,7 +94,7 @@ async def list_agents():
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT agent_id, name, description, system_prompt, icon, is_system, base_agent_id "
+            "SELECT agent_id, name, description, system_prompt, icon, is_system, base_agent_id, enabled_tools, config_json "
             "FROM agent_definitions ORDER BY is_system DESC, name ASC"
         )
         rows = cursor.fetchall()
@@ -102,41 +108,94 @@ async def list_agents():
             icon=row["icon"],
             is_system=bool(row["is_system"]),
             base_agent_id=row["base_agent_id"],
+            enabled_tools=json.loads(row["enabled_tools"]) if row["enabled_tools"] else [],
+            model_settings=json.loads(row["config_json"]) if row.keys() and "config_json" in row.keys() and row["config_json"] else {},
         )
         for row in rows
     ]
 
 
-# ── Agent Configuration (Clone + Customize) ───────────────────────────
+# ── Tool Usage Endpoints ───────────────────────────────────────────────
+@router.post("/tools/export/csv")
+async def export_csv(request: ExportRequest):
+    """Exports tabular data from a message into CSV."""
+    from app.engine.tools.export_tools import extract_tables_to_csv
+    csv_data = extract_tables_to_csv(request.content)
+    return Response(
+        content=csv_data, 
+        media_type="text/csv", 
+        headers={"Content-Disposition": "attachment; filename=export.csv"}
+    )
+
+@router.post("/tools/export/pdf")
+async def export_pdf(request: ExportRequest):
+    """Generates a PDF report from the markdown answer."""
+    from app.engine.tools.export_tools import generate_pdf_from_markdown
+    try:
+        pdf_data = generate_pdf_from_markdown(request.content)
+        return Response(
+            content=pdf_data, 
+            media_type="application/pdf", 
+            headers={"Content-Disposition": "attachment; filename=report.pdf"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF Generation failed: {str(e)}")
+
+
+# ── Agent Configuration (Clone + Customize or Update) ─────────────────
 @router.post("/configure", response_model=AgentDefinition)
 async def configure_agent(request: AgentConfigRequest):
-    """Clone a base agent with a custom system prompt and name."""
-    # Verify the base agent exists
+    """Clone a base agent or update an existing custom agent with new settings."""
+    # Verify the base agent exists (if creating or editing an agent based on one)
     base = _get_agent_definition(request.base_agent_id)
     if not base:
         raise HTTPException(status_code=404, detail=f"Base agent '{request.base_agent_id}' not found.")
 
-    new_agent_id = f"custom_{uuid4().hex[:12]}"
-
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO agent_definitions (agent_id, name, description, system_prompt, base_agent_id, icon, is_system)
-            VALUES (?, ?, ?, ?, ?, ?, 0)
-        ''', (
-            new_agent_id, request.name, request.description,
-            request.system_prompt, request.base_agent_id, base["icon"]
-        ))
+        
+        if request.agent_id:
+            # UPDATE existing custom agent
+            existing = _get_agent_definition(request.agent_id)
+            if not existing:
+                raise HTTPException(status_code=404, detail=f"Agent '{request.agent_id}' not found.")
+            if existing["is_system"]:
+                raise HTTPException(status_code=403, detail="Cannot edit system base agents.")
+            
+            cursor.execute('''
+                UPDATE agent_definitions 
+                SET name = ?, description = ?, system_prompt = ?, base_agent_id = ?, enabled_tools = ?, config_json = ?
+                WHERE agent_id = ?
+            ''', (
+                request.name, request.description, request.system_prompt, 
+                request.base_agent_id, json.dumps(request.enabled_tools), 
+                json.dumps(request.model_settings), request.agent_id
+            ))
+            agent_id_to_return = request.agent_id
+        else:
+            # CREATE new agent
+            agent_id_to_return = f"custom_{uuid4().hex[:12]}"
+            cursor.execute('''
+                INSERT INTO agent_definitions (agent_id, name, description, system_prompt, base_agent_id, icon, is_system, enabled_tools, config_json)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+            ''', (
+                agent_id_to_return, request.name, request.description,
+                request.system_prompt, request.base_agent_id, base["icon"],
+                json.dumps(request.enabled_tools), json.dumps(request.model_settings)
+            ))
+        
         conn.commit()
 
     return AgentDefinition(
-        agent_id=new_agent_id,
+        agent_id=agent_id_to_return,
         name=request.name,
         description=request.description,
         system_prompt=request.system_prompt,
         icon=base["icon"],
         is_system=False,
         base_agent_id=request.base_agent_id,
+        enabled_tools=request.enabled_tools,
+        model_settings=request.model_settings,
     )
 
 
@@ -162,11 +221,18 @@ def _get_agent_definition(agent_id: str) -> dict | None:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT agent_id, name, description, system_prompt, icon, is_system, base_agent_id "
+            "SELECT agent_id, name, description, system_prompt, icon, is_system, base_agent_id, enabled_tools, config_json "
             "FROM agent_definitions WHERE agent_id = ?",
             (agent_id,)
         )
         row = cursor.fetchone()
     if row:
-        return dict(row)
+        row_dict = dict(row)
+        if isinstance(row_dict.get("enabled_tools"), str):
+            row_dict["enabled_tools"] = json.loads(row_dict["enabled_tools"])
+        if isinstance(row_dict.get("config_json"), str):
+            row_dict["model_settings"] = json.loads(row_dict["config_json"])
+        else:
+            row_dict["model_settings"] = {}
+        return row_dict
     return None

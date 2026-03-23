@@ -10,20 +10,44 @@ export function IngestionManager({ compact = false }: { compact?: boolean }) {
     embedding_mode: 'local_fastembed',
   });
   
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobIds, setJobIds] = useState<string[]>([]);
   const [status, setStatus] = useState<JobStatus | 'idle'>('idle');
   const [error, setError] = useState<string | null>(null);
 
   // Polling mechanism
   useEffect(() => {
-    if (!jobId || status === 'complete' || status === 'failed') return;
+    if (jobIds.length === 0 || status === 'complete' || status === 'failed') return;
 
     const intervalId = setInterval(async () => {
       try {
-        const result = await ImmersiveRagAPI.checkStatus(jobId);
-        setStatus(result.status);
-        if (result.status === 'failed' && result.error) {
-           setError(result.error);
+        let finishedCount = 0;
+        let failedCount = 0;
+        let lastError = null;
+
+        for (const jid of jobIds) {
+          const result = await ImmersiveRagAPI.checkStatus(jid);
+          if (result.status === 'complete') {
+             finishedCount++;
+          } else if (result.status === 'failed') {
+             failedCount++;
+             finishedCount++; // failure is a terminal state
+             lastError = result.message || 'Unknown error';
+          }
+        }
+
+        if (finishedCount === jobIds.length) {
+           clearInterval(intervalId);
+           if (failedCount === jobIds.length) {
+              setStatus('failed');
+              setError(lastError || 'All files failed to process. Try using Cloud LlamaParse if these are scans.');
+           } else if (failedCount > 0) {
+              setStatus('complete');
+              setError(`${failedCount} out of ${jobIds.length} files failed: ${lastError}. (Successful files were indexed)`);
+           } else {
+              setStatus('complete');
+           }
+        } else {
+           setStatus('processing');
         }
       } catch (err: any) {
         console.error("Polling error:", err);
@@ -31,17 +55,18 @@ export function IngestionManager({ compact = false }: { compact?: boolean }) {
     }, 3000);
 
     return () => clearInterval(intervalId);
-  }, [jobId, status]);
+  }, [jobIds, status]);
 
-  const handleFileUpload = async (file: File) => {
+  const handleFilesUpload = async (files: File[]) => {
     setError(null);
     setStatus('processing'); 
     try {
-      const response = await ImmersiveRagAPI.ingest(file, config);
-      setJobId(response.job_id);
-      setStatus(response.status);
+      const response = await ImmersiveRagAPI.bulkIngest(files, config);
+      setJobIds(response.jobs.map(j => j.job_id));
+      // Start polling
+      if(response.jobs.length === 0) setStatus('idle');
     } catch (err: any) {
-      setError(err.message || 'Failed to upload document');
+      setError(err.message || 'Failed to upload document(s)');
       setStatus('failed');
     }
   };
@@ -55,7 +80,7 @@ export function IngestionManager({ compact = false }: { compact?: boolean }) {
            <h1 className="text-2xl font-bold text-on-surface">
              Document Control Plane
            </h1>
-           <p className="text-on-surface/50 text-sm mt-1">Configure and index enterprise documents into the local vector layer safely.</p>
+           <p className="text-on-surface/50 text-sm mt-1">Configure and bulk-index enterprise documents into the local vector layer safely.</p>
         </div>
       )}
       
@@ -67,7 +92,7 @@ export function IngestionManager({ compact = false }: { compact?: boolean }) {
       />
       
       <UploadZone 
-        onFileSelect={handleFileUpload} 
+        onFilesSelect={handleFilesUpload} 
         disabled={isUploading} 
         status={status}
         error={error}

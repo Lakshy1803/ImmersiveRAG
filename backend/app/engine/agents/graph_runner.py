@@ -31,6 +31,7 @@ class AgentState(TypedDict):
     answer: str
     tokens_used: int
     cache_hit: bool
+    model_settings: dict
 
 
 # ── Node 1: Retrieve ───────────────────────────────────────────────────
@@ -67,7 +68,11 @@ def generate_node(state: AgentState) -> dict:
         for i, chunk in enumerate(chunks):
             text = chunk.get("text", "")
             score = chunk.get("score", 0)
-            context_parts.append(f"[Chunk {i+1} | {score:.0%} match]\n{text}")
+            metadata = chunk.get("metadata", {})
+            file_name = metadata.get("file_name", f"Chunk {i+1}")
+            page = metadata.get("page_label", "N/A")
+            heading = metadata.get("heading", "Unknown")
+            context_parts.append(f"[Source: {file_name} | Page: {page} | Heading: {heading} | {score:.0%} match]\n{text}")
         context_str = "\n\n".join(context_parts)
     else:
         context_str = "No relevant documents found in the knowledge base."
@@ -89,12 +94,18 @@ def generate_node(state: AgentState) -> dict:
     )
     messages.append({"role": "user", "content": user_content})
 
+    # Extract overrides from model_settings if provided
+    settings = state.get("model_settings", {})
+    gen_model = config.llm_model  # Model name override could go here too if needed later
+    max_tokens = int(settings.get("max_tokens", config.llm_max_answer_tokens))
+    temperature = float(settings.get("temperature", 0.3))
+
     try:
         response = client.chat.completions.create(
-            model=config.llm_model,
+            model=gen_model,
             messages=messages,
-            max_tokens=config.llm_max_answer_tokens,
-            temperature=0.3
+            max_tokens=max_tokens,
+            temperature=temperature
         )
         if not response.choices:
             logger.warning(f"LLM returned no choices: {response}")
@@ -109,17 +120,41 @@ def generate_node(state: AgentState) -> dict:
     return {"answer": answer}
 
 
+# ── Node 3: Logger (Observability) ─────────────────────────────────────
+def logger_node(state: AgentState) -> dict:
+    """
+    Observability node: Logs the execution state, tokens used, and tool calls.
+    Satisfies the requirement for a 'logger' node in the multi-agent graph.
+    """
+    logger.info("===" * 10)
+    logger.info(f"[GRAPH LOGGER] Session: {state.get('session_id')}")
+    logger.info(f"[GRAPH LOGGER] Agent: {state.get('agent_id')}")
+    logger.info(f"[GRAPH LOGGER] Tokens Used in Retrieval: {state.get('tokens_used')}")
+    logger.info(f"[GRAPH LOGGER] Cache Hit: {state.get('cache_hit')}")
+    
+    ans_length = len(state.get('answer', ''))
+    logger.info(f"[GRAPH LOGGER] Generated Answer Length: {ans_length} chars")
+    
+    context_len = len(state.get('context_chunks', []))
+    logger.info(f"[GRAPH LOGGER] Context Chunks Provided: {context_len}")
+    logger.info("===" * 10)
+    
+    # The logger node doesn't mutate the state, just observes it.
+    return dict()
+
 # ── Graph Builder ──────────────────────────────────────────────────────
 def _build_graph() -> StateGraph:
-    """Constructs the 2-node LangGraph StateGraph (Sync)."""
+    """Constructs the 3-node LangGraph StateGraph (Sync)."""
     graph = StateGraph(AgentState)
 
     graph.add_node("retrieve", retrieve_node)
     graph.add_node("generate", generate_node)
+    graph.add_node("logger", logger_node)
 
     graph.set_entry_point("retrieve")
     graph.add_edge("retrieve", "generate")
-    graph.add_edge("generate", END)
+    graph.add_edge("generate", "logger")
+    graph.add_edge("logger", END)
 
     return graph.compile()
 
@@ -141,6 +176,7 @@ def run_agent_graph(
     agent_id: str,
     session_id: str,
     system_prompt: str,
+    model_settings: dict = None,
 ) -> dict:
     """
     Runs the full RAG + LLM pipeline (Sync).
@@ -169,6 +205,7 @@ def run_agent_graph(
         "answer": "",
         "tokens_used": 0,
         "cache_hit": False,
+        "model_settings": model_settings or {},
     }
 
     # Synchronous execution

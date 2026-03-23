@@ -52,27 +52,30 @@ class IngestionPipelineManager:
         try:
             # 1. Extraction Selection
             if req_data.extraction_mode == "cloud_llamaparse":
-                markdown_content = await run_llamaparse_extraction(req_data.source_path)
+                pages = await run_llamaparse_extraction(req_data.source_path)
             else:
                 # Local fallback extraction
+                pages = []
                 if req_data.source_path.endswith('.pdf'):
                     import PyPDF2
-                    text_content = []
                     with open(req_data.source_path, 'rb') as pdf_file:
                         pdf_reader = PyPDF2.PdfReader(pdf_file)
-                        for page in pdf_reader.pages:
+                        for idx, page in enumerate(pdf_reader.pages):
                             page_text = page.extract_text()
                             if page_text:
-                                text_content.append(page_text)
-                    if not text_content:
+                                pages.append({"text": page_text, "metadata": {"page": str(idx + 1)}})
+                    if not pages:
                         raise ValueError(f"PDF '{os.path.basename(req_data.source_path)}' yielded no extractable text.")
-                    markdown_content = "\n\n".join(text_content)
                 else:
                     async with aiofiles.open(req_data.source_path, mode='r', encoding='utf-8', errors='replace') as f:
-                        markdown_content = await f.read()
+                        content = await f.read()
+                        pages.append({"text": content, "metadata": {"page": "1"}})
 
-            # 2. Local Chunking
-            chunks = chunk_markdown_content(markdown_content)
+            # 2. Local Chunking (preserves page metadata and tracks headings)
+            chunks = chunk_markdown_content(pages, req_data.filename)
+            
+            if not chunks:
+                raise ValueError(f"Document '{req_data.filename}' yielded no semantic text chunks after parsing. This usually occurs if the document contains only images, drawings, or very sparse text layers.")
 
             # 3. Save chunks into SQLite so the scheduler can embed them
             chunk_payload = json.dumps(chunks)

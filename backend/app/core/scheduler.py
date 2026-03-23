@@ -58,18 +58,34 @@ async def poll_ingestion_queue():
         
         if chunks:
             logger.info(f"Generating vectors for {len(chunks)} chunks via {embedding_mode}.")
-            vectors = get_corporate_embeddings(chunks, embedding_mode=embedding_mode)
+            
+            # Extract planar text array for the embedder
+            chunk_texts = [c["text"] if isinstance(c, dict) else c for c in chunks]
+            vectors = get_corporate_embeddings(chunk_texts, embedding_mode=embedding_mode)
             
             # Store in Qdrant
             qdrant = get_qdrant_client()
             points = []
-            for i, (text, vector) in enumerate(zip(chunks, vectors)):
+            for i, (chunk, vector) in enumerate(zip(chunks, vectors)):
+                text = chunk["text"] if isinstance(chunk, dict) else chunk
+                metadata = chunk.get("metadata", {}) if isinstance(chunk, dict) else {}
+                
                 point_id = uuid4().hex
+                
+                payload = {
+                    "text": text, 
+                    "job_id": job_id, 
+                    "chunk_idx": i
+                }
+                
+                # Merge page, filename, and heading metadata
+                payload.update(metadata)
+                
                 points.append(
                     PointStruct(
                         id=point_id, 
                         vector=vector, 
-                        payload={"text": text, "job_id": job_id, "chunk_idx": i}
+                        payload=payload
                     )
                 )
                 

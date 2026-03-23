@@ -70,7 +70,8 @@ class RetrievalOrchestrator:
                     chunk_id=str(scored_point.id),
                     document_id=doc_id,
                     text=chunk_text,
-                    score=scored_point.score
+                    score=scored_point.score,
+                    metadata=payload
                 )
             )
 
