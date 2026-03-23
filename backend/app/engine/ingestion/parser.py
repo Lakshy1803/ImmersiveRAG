@@ -5,7 +5,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-async def run_llamaparse_extraction(file_path: str) -> str:
+async def run_llamaparse_extraction(file_path: str) -> list[dict]:
     """
     Runs LlamaParse on the given file path.
     Pre-condition: User has confirmed VPN is OFF, allowing external call to llama-parse.
@@ -17,7 +17,7 @@ async def run_llamaparse_extraction(file_path: str) -> str:
         logger.warning("IMMERSIVE_RAG_LLAMA_PARSE_API_KEY missing. Returning simulated mock parser markdown.")
         import asyncio
         await asyncio.sleep(2) # simulate parsing delay
-        return f"# MOCK PARSED DOCUMENT: {os.path.basename(file_path)}\n\nThis is a simulated document chunk generated because LlamaParse API keys were missing. It contains enough content to verify the embedding generation and Qdrant ingestion stages."
+        return [{"text": f"# MOCK PARSED DOCUMENT: {os.path.basename(file_path)}\n\nThis is a simulated document chunk generated because LlamaParse API keys were missing. It contains enough content to verify the embedding generation and Qdrant ingestion stages.", "metadata": {"page": "1"}}]
         
     logger.info(f"Starting LlamaParse extraction for {file_path} with VPN OFF assumed.")
     
@@ -32,6 +32,15 @@ async def run_llamaparse_extraction(file_path: str) -> str:
     # LlamaParse handles asynchronous ingestion internally
     documents = await parser.aload_data(file_path)
     
-    # We receive LangChain/LlamaIndex document objects, we concatenate the text block
-    full_markdown = "\n\n".join([doc.text for doc in documents])
-    return full_markdown
+    # We receive LangChain/LlamaIndex document objects
+    results = []
+    for doc in documents:
+        # LlamaParse metadata contains 'page_label' or 'page_number' usually
+        meta = doc.metadata if hasattr(doc, "metadata") and doc.metadata else {}
+        page = meta.get("page_label", meta.get("page_number", "1"))
+        results.append({
+            "text": doc.text,
+            "metadata": {"page": str(page)}
+        })
+
+    return results

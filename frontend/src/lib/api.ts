@@ -4,6 +4,7 @@ export interface IngestionJob {
   job_id: string;
   status: JobStatus;
   document_id: string | null;
+  message?: string | null;
   error?: string | null;
 }
 
@@ -32,6 +33,8 @@ export interface AgentDefinition {
   icon: string;
   is_system: boolean;
   base_agent_id: string | null;
+  enabled_tools: string[];
+  model_settings?: Record<string, any>;
 }
 
 export interface AgentChatResponse {
@@ -55,6 +58,22 @@ export const ImmersiveRagAPI = {
     if (!response.ok) {
       const e = await response.json().catch(() => ({}));
       throw new Error(e.detail || `Failed to ingest: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  bulkIngest: async (files: File[], config: { extraction_mode: string; embedding_mode: string; collection_id?: string; tenant_id?: string }): Promise<{ message: string, jobs: { filename: string, job_id: string, status: JobStatus }[] }> => {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+    formData.append('extraction_mode', config.extraction_mode);
+    formData.append('embedding_mode', config.embedding_mode);
+    if(config.collection_id) formData.append('collection_id', config.collection_id);
+    if(config.tenant_id) formData.append('tenant_id', config.tenant_id);
+
+    const response = await fetch('/api/admin/ingest/bulk', { method: 'POST', body: formData });
+    if (!response.ok) {
+      const e = await response.json().catch(() => ({}));
+      throw new Error(e.detail || `Failed to bulk ingest: ${response.statusText}`);
     }
     return response.json();
   },
@@ -99,7 +118,8 @@ export const ImmersiveRagAPI = {
     return response.json();
   },
 
-  configureAgent: async (request: { base_agent_id: string; name: string; system_prompt: string; description?: string }): Promise<AgentDefinition> => {
+  // ── Agent Configuration (Clone + Customize) ───────────────────────────
+  configureAgent: async (request: { agent_id?: string; base_agent_id: string; name: string; system_prompt: string; description?: string; enabled_tools?: string[]; model_settings?: Record<string, any> }): Promise<AgentDefinition> => {
     const response = await fetch('/api/agent/configure', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -118,5 +138,86 @@ export const ImmersiveRagAPI = {
       const e = await response.json().catch(() => ({}));
       throw new Error(e.detail || `Delete agent failed: ${response.statusText}`);
     }
+  },
+
+  // ── Admin & Stats ──────────────────────────────────────────────────
+  getAdminConfig: async () => {
+    const response = await fetch('/api/admin/config/current');
+    if (!response.ok) throw new Error("Failed to fetch admin config");
+    return response.json();
+  },
+
+  getQdrantStats: async () => {
+    const response = await fetch('/api/admin/qdrant/stats');
+    if (!response.ok) throw new Error("Failed to fetch vector stats");
+    return response.json();
+  },
+
+  exportToPDF: async (content: string) => {
+    const res = await fetch('/api/agent/tools/export/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content })
+    });
+    if (!res.ok) throw new Error("PDF Export failed");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `report_${Date.now()}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  },
+
+  exportToCSV: async (content: string) => {
+    const res = await fetch('/api/agent/tools/export/csv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content })
+    });
+    if (!res.ok) throw new Error("CSV Export failed");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `data_${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  },
+  // ── LLM Config ─────────────────────────────────────────────────────
+  getLLMConfig: async (): Promise<{ api_key_masked: string; base_url: string; model: string; configured: boolean }> => {
+    const response = await fetch('/api/admin/llm-config');
+    if (!response.ok) throw new Error(`Failed to get LLM config: ${response.statusText}`);
+    return response.json();
+  },
+
+  saveLLMConfig: async (apiKey: string, baseUrl: string, model: string): Promise<{ success: boolean; message: string; model: string }> => {
+    const response = await fetch('/api/admin/llm-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: apiKey, base_url: baseUrl, model }),
+    });
+    if (!response.ok) {
+      const e = await response.json().catch(() => ({}));
+      throw new Error(e.detail || `Failed to save LLM config: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  testLLMConfig: async (apiKey: string, baseUrl: string, model: string): Promise<{ success: boolean; message: string; model: string }> => {
+    const response = await fetch('/api/admin/llm-config/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: apiKey, base_url: baseUrl, model }),
+    });
+    if (!response.ok) {
+      const e = await response.json().catch(() => ({}));
+      throw new Error(e.detail || `Connection test failed: ${response.statusText}`);
+    }
+    return response.json();
   },
 };

@@ -5,14 +5,14 @@ import { Spinner } from '../ui/Spinner';
 import { JobStatus } from '@/lib/api';
 
 interface UploadZoneProps {
-  onFileSelect: (file: File) => void;
+  onFilesSelect: (files: File[]) => void;
   disabled?: boolean;
   status: JobStatus | 'idle';
   error: string | null;
   compact?: boolean;
 }
 
-export function UploadZone({ onFileSelect, disabled, status, error, compact = false }: UploadZoneProps) {
+export function UploadZone({ onFilesSelect, disabled, status, error, compact = false }: UploadZoneProps) {
   const [isHovered, setIsHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -21,8 +21,8 @@ export function UploadZone({ onFileSelect, disabled, status, error, compact = fa
     setIsHovered(false);
     if (disabled) return;
     
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      onFileSelect(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      onFilesSelect(Array.from(e.dataTransfer.files));
     }
   };
 
@@ -52,8 +52,9 @@ export function UploadZone({ onFileSelect, disabled, status, error, compact = fa
           <input 
              ref={inputRef} 
              type="file" 
+             multiple
              className="hidden" 
-             onChange={(e) => e.target.files && onFileSelect(e.target.files[0])}
+             onChange={(e) => e.target.files && onFilesSelect(Array.from(e.target.files))}
              accept=".pdf,.txt,.md"
           />
         </div>

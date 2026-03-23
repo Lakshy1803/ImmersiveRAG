@@ -1,0 +1,17 @@
+[Unit]
+Description=ImmersiveRAG Next.js Frontend
+After=network.target immersiverag-backend.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/immersiveRAG/frontend
+ExecStart=/usr/bin/node node_modules/.bin/next start --port 3000
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

@@ -2,6 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import contextlib
 
+from app.core.warnings import silence_llama_index_pydantic_warning
+# Silence the Pydantic validation warnings emitted by third-party packages early before they are imported
+silence_llama_index_pydantic_warning()
+
 from app.core.config import config
 from app.api.admin_router import router as admin_router
 from app.api.agent_router import router as agent_router

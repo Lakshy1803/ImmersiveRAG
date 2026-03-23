@@ -108,12 +108,13 @@ uvicorn app.main:app --reload --app-dir backend
 ```
 
 The API exposes:
-- `GET /health`
-- `GET /health/ready`
-- `POST /ingest`
-- `GET /jobs/{job_id}`
-- `POST /index/{document_id}`
-- `POST /query`
+- `POST /admin/ingest` : Upload and start background ingestion
+- `GET /admin/ingest/{job_id}/status` : Poll for ingestion job state
+- `POST /agent/chat` : (New) Full RAG + LLM agent chat via LangGraph
+- `POST /agent/query` : (Legacy) Retrieval-only context search
+- `GET /agent/registry` : List available agents
+- `POST /agent/configure` : Create custom agent clones
+- `DELETE /admin/debug/purge-vectors` : Wipe all data for reset
 
 ## 7. Test The Code
 
@@ -156,10 +157,9 @@ $env:IMMERSIVE_RAG_OPENAI_EMBEDDING_MODEL="text-embedding-3-small"
 ### Use Groq for generation
 
 ```powershell
-$env:IMMERSIVE_RAG_GENERATION_PROVIDER="openai"
-$env:IMMERSIVE_RAG_GENERATION_API_KEY="your-groq-key"
-$env:IMMERSIVE_RAG_GENERATION_BASE_URL="https://api.groq.com/openai/v1"
-$env:IMMERSIVE_RAG_GENERATION_MODEL="openai/gpt-oss-120b"
+$env:IMMERSIVE_RAG_LLM_API_KEY="your-groq-key"
+$env:IMMERSIVE_RAG_LLM_BASE_URL="https://api.groq.com/openai/v1"
+$env:IMMERSIVE_RAG_LLM_MODEL="llama-3.3-70b-versatile"
 ```
 
 ### Use Vertex Gemini through the OpenAI client

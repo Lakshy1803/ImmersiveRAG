@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
 from typing import Dict, Any, Optional
+from pydantic import BaseModel
 import os
 import shutil
 
@@ -10,7 +11,93 @@ from app.core.config import AppConfig
 from app.engine.ingestion.pipeline import IngestionPipelineManager
 from uuid import uuid4
 
+class AdminConfigResponse(BaseModel):
+    embedding_model: str
+    generation_model: str
+    max_context_tokens: int
+    llm_max_answer_tokens: int
+    sliding_window_size: int
+    temperature: float = 0.3
+    top_k: int = 5
+
+class QdrantStatsResponse(BaseModel):
+    collection_name: str
+    vector_count: int
+    status: str
+
 router = APIRouter(prefix="/admin", tags=["Admin & Ingestion"])
+
+
+# ── LLM Runtime Config ─────────────────────────────────────────────────────
+
+class LLMConfigRequest(BaseModel):
+    api_key: str
+    base_url: str
+    model: str
+
+class LLMConfigResponse(BaseModel):
+    success: bool
+    message: str
+    model: str
+
+
+@router.post("/llm-config", response_model=LLMConfigResponse, tags=["LLM Config"])
+async def set_llm_config(request: LLMConfigRequest):
+    """
+    Update the LLM connection settings at runtime without restarting the server.
+    Resets the LLM client singleton so the next chat request uses the new credentials.
+    """
+    from app.core.config import config
+    from app.engine.agents.llm_client import reset_llm_client
+
+    # Update the in-memory config
+    config.llm_api_key = request.api_key
+    config.llm_base_url = request.base_url
+    config.llm_model = request.model
+
+    # Drop the cached client so it reinitialises with new values
+    reset_llm_client()
+
+    return LLMConfigResponse(
+        success=True,
+        message="LLM configuration updated successfully.",
+        model=request.model,
+    )
+
+
+@router.post("/llm-config/test", response_model=LLMConfigResponse, tags=["LLM Config"])
+async def test_llm_config(request: LLMConfigRequest):
+    """
+    Test LLM credentials without saving them.
+    Sends a minimal ping to the model and returns success/failure.
+    """
+    from openai import OpenAI
+    try:
+        client = OpenAI(api_key=request.api_key, base_url=request.base_url or None)
+        # Minimal test: list models or send a tiny completion
+        response = client.chat.completions.create(
+            model=request.model,
+            messages=[{"role": "user", "content": "Say OK"}],
+            max_tokens=5,
+        )
+        reply = response.choices[0].message.content if response.choices else "OK"
+        return LLMConfigResponse(success=True, message=f"Connection successful: {reply}", model=request.model)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Connection test failed: {str(e)}")
+
+
+@router.get("/llm-config", tags=["LLM Config"])
+async def get_llm_config():
+    """Returns the current LLM configuration (API key is masked)."""
+    from app.core.config import config
+    api_key = config.llm_api_key or ""
+    masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else ("***" if api_key else "")
+    return {
+        "api_key_masked": masked,
+        "base_url": config.llm_base_url or "",
+        "model": config.llm_model,
+        "configured": bool(api_key),
+    }
 
 @router.post("/ingest", response_model=IngestStatusResponse)
 async def start_ingestion(
@@ -60,6 +147,88 @@ async def start_ingestion(
         status=JobStatus.PROCESSING,
         message="File uploaded successfully. Processing will continue seamlessly in the background."
     )
+
+@router.post("/ingest/bulk", response_model=Dict[str, Any])
+async def start_bulk_ingestion(
+    background_tasks: BackgroundTasks,
+    files: list[UploadFile] = File(...),
+    tenant_id: str = Form("default"),
+    collection_id: str = Form("default"),
+    extraction_mode: str = Form("local_markdown"),
+    embedding_mode: str = Form("local_fastembed"),
+    config: AppConfig = Depends(get_config)
+):
+    """
+    Bulk ingest multiple files at once. 
+    Returns a dictionary of tracking objects.
+    """
+    upload_dir = os.path.join(config.data_dir, "uploads")
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    manager = IngestionPipelineManager()
+    jobs = []
+    
+    for file in files:
+        safe_filename = file.filename or "unknown_upload.bin"
+        file_path = os.path.join(upload_dir, f"{uuid4().hex}_{safe_filename}")
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        request_data = DocumentIngestRequest(
+            source_path=file_path,
+            filename=safe_filename,
+            content_type=file.content_type or "application/octet-stream",
+            tenant_id=tenant_id,
+            collection_id=collection_id,
+            extraction_mode=extraction_mode,
+            embedding_mode=embedding_mode
+        )
+        
+        job = manager.create_job(request=request_data)
+        background_tasks.add_task(manager.execute_parsing_stage, job.job_id)
+        
+        jobs.append({
+            "filename": safe_filename,
+            "job_id": job.job_id,
+            "status": job.status.value
+        })
+        
+    return {
+        "message": f"Successfully queued {len(jobs)} files for ingestion.",
+        "jobs": jobs
+    }
+
+@router.get("/config/current", response_model=AdminConfigResponse)
+async def get_current_config(config: AppConfig = Depends(get_config)):
+    """Returns the current public configuration for display in Model Settings UI."""
+    return AdminConfigResponse(
+        embedding_model=config.embedding_model,
+        generation_model=config.llm_model,
+        max_context_tokens=config.max_context_tokens,
+        llm_max_answer_tokens=config.llm_max_answer_tokens,
+        sliding_window_size=config.sliding_window_size,
+    )
+
+@router.get("/qdrant/stats", response_model=QdrantStatsResponse)
+async def get_qdrant_stats():
+    """Returns basic stats about the Qdrant vector store collections."""
+    from app.storage.vector_db import get_qdrant_client, COLLECTION_NAME
+    
+    try:
+        qdrant = get_qdrant_client()
+        info = qdrant.get_collection(COLLECTION_NAME)
+        return QdrantStatsResponse(
+            collection_name=COLLECTION_NAME,
+            vector_count=info.points_count or 0,
+            status="green" if info.status and info.status.value == "green" else str(info.status)
+        )
+    except Exception as e:
+        return QdrantStatsResponse(
+            collection_name=COLLECTION_NAME,
+            vector_count=0,
+            status=f"offline: {e}"
+        )
 
 @router.get("/ingest/{job_id}/status", response_model=IngestStatusResponse)
 async def get_job_status(job_id: str):

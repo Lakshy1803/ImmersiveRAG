@@ -19,6 +19,7 @@ class ContextChunk(BaseModel):
     text: str
     score: float
     modality: str = "text"
+    metadata: dict = Field(default_factory=dict)
 
 class AgentContextResponse(BaseModel):
     agent_id: str
@@ -57,10 +58,15 @@ class AgentDefinition(BaseModel):
     icon: str = "smart_toy"
     is_system: bool = False
     base_agent_id: Optional[str] = None
+    enabled_tools: List[str] = Field(default_factory=list)
+    model_settings: dict = Field(default_factory=dict)
 
 class AgentConfigRequest(BaseModel):
+    agent_id: Optional[str] = None
     base_agent_id: str = "doc_analyzer"
     name: str
     system_prompt: str
     description: str = ""
+    enabled_tools: List[str] = Field(default_factory=list)
+    model_settings: dict = Field(default_factory=dict)
 

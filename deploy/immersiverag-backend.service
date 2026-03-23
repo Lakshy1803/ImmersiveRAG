@@ -1,0 +1,19 @@
+[Unit]
+Description=ImmersiveRAG FastAPI Backend
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/immersiveRAG
+ExecStart=/home/ubuntu/immersiveRAG/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --app-dir backend
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Load environment variables from .env file
+EnvironmentFile=/home/ubuntu/immersiveRAG/backend/.env
+
+[Install]
+WantedBy=multi-user.target

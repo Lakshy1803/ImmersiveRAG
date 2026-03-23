@@ -28,7 +28,6 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ extractedContext }) => {
           </div>
         </div>
 
-
         {/* Context Section (Bottom - Scrollable Live Data) */}
         <div className="flex-1 flex flex-col min-h-0">
           <div className="px-6 py-4 flex items-center justify-between">
@@ -58,7 +57,7 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ extractedContext }) => {
               ))
             ) : (
               <div className="p-8 text-center border-2 border-dashed border-outline-variant/10 rounded-2xl">
-                <p className="text-[11px] text-on-surface/30 italic">No query context active</p>
+                <p className="text-[11px] text-on-surface/30 italic">No query context</p>
               </div>
             )}
           </div>

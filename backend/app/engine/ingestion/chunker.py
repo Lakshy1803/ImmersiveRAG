@@ -1,79 +1,90 @@
 import re
-from typing import List
+from typing import List, Dict
 
-
-def chunk_markdown_content(text: str, max_chars: int = 800, overlap: int = 100) -> List[str]:
+def chunk_markdown_content(pages: List[dict], filename: str, max_chars: int = 800, overlap: int = 100) -> List[dict]:
     """
-    Splits document text into semantic chunks.
-    
-    Strategy 1 (Markdown): splits on ## headers — works for LlamaParse output.
-    Strategy 2 (Plain text): sliding window on sentence boundaries — works for PyPDF2 plain text.
+    Splits document pages into semantic chunks while maintaining metadata.
     
     Args:
-        text: Input text (markdown or plain)
+        pages: List of mapped pages like {"text": "...", "metadata": {"page": "1"}}
+        filename: Name of the uploaded file
         max_chars: Target max characters per chunk
-        overlap: Characters of overlap between chunks (for context continuity)
+        overlap: Characters of overlap between chunks
     """
-    text = text.strip()
-    if not text:
-        return []
-
-    # --- Strategy 1: Markdown header-based splitting ---
-    raw_chunks = re.split(r'(?=\n#{1,4}\s)', text)
-    # Only use this path if we actually found headers (more than 1 block)
-    if len(raw_chunks) > 1:
-        chunks: List[str] = []
-        current_chunk = ""
-        for block in raw_chunks:
+    chunks = []
+    current_heading = "Unknown Heading"
+    
+    for page in pages:
+        text = page.get("text", "").strip()
+        if not text:
+            continue
+            
+        page_num = page.get("metadata", {}).get("page", "1")
+        
+        # Split text on markdown headers to track sectional context
+        raw_blocks = re.split(r'(?=\n#{1,4}\s)', "\n" + text)
+        
+        for block in raw_blocks:
             block = block.strip()
             if not block:
                 continue
-            if len(current_chunk) + len(block) < max_chars:
-                current_chunk += "\n\n" + block
-            else:
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-                current_chunk = block
-        if current_chunk:
-            chunks.append(current_chunk.strip())
-        return [c for c in chunks if len(c) > 20]
-
-    # --- Strategy 2: Sentence-boundary sliding window for plain text ---
-    # Split on sentence endings (.!?) followed by whitespace/newline
-    sentences = re.split(r'(?<=[.!?])\s+', text)
-    
-    chunks = []
-    current_chunk = ""
-
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-
-        if len(current_chunk) + len(sentence) + 1 <= max_chars:
-            current_chunk = (current_chunk + " " + sentence).strip()
-        else:
+                
+            # Check if this block starts with a header, update context if so
+            header_match = re.match(r'^(#{1,4})\s+(.+?)(?:\n|$)', block)
+            if header_match:
+                current_heading = header_match.group(2).strip()
+                
+            # Chunk the block sequentially (combining paragraphs/sentences)
+            sentences = re.split(r'(?<=[.!?])\s+', block)
+            current_chunk = ""
+            
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence: continue
+                
+                if len(current_chunk) + len(sentence) + 1 <= max_chars:
+                    current_chunk = (current_chunk + " " + sentence).strip()
+                else:
+                    if current_chunk:
+                        chunks.append({
+                            "text": current_chunk,
+                            "metadata": {
+                                "file_name": filename,
+                                "page_label": str(page_num),
+                                "heading": current_heading
+                            }
+                        })
+                    if overlap > 0 and current_chunk:
+                        overlap_text = current_chunk[-overlap:].strip()
+                        current_chunk = (overlap_text + " " + sentence).strip()
+                    else:
+                        current_chunk = sentence
+                        
             if current_chunk:
-                chunks.append(current_chunk)
-            # Start new chunk with overlap from end of previous chunk
-            if overlap > 0 and current_chunk:
-                overlap_text = current_chunk[-overlap:].strip()
-                current_chunk = (overlap_text + " " + sentence).strip()
-            else:
-                current_chunk = sentence
+                chunks.append({
+                    "text": current_chunk,
+                    "metadata": {
+                        "file_name": filename,
+                        "page_label": str(page_num),
+                        "heading": current_heading
+                    }
+                })
 
-    if current_chunk:
-        chunks.append(current_chunk)
-
-    # Final safety: hard-split any remaining chunks still over max_chars
+    # Final safety: hard-split chunks that are still over max_chars
     final_chunks = []
     for chunk in chunks:
-        if len(chunk) <= max_chars:
+        c_text = chunk["text"]
+        if len(c_text) <= max_chars:
             final_chunks.append(chunk)
         else:
-            for i in range(0, len(chunk), max_chars - overlap):
-                piece = chunk[i:i + max_chars].strip()
+            for i in range(0, len(c_text), max_chars - overlap):
+                piece = c_text[i:i + max_chars].strip()
                 if piece:
-                    final_chunks.append(piece)
+                    # clone metadata for piece
+                    final_chunks.append({
+                        "text": piece,
+                        "metadata": chunk["metadata"].copy()
+                    })
 
-    return [c for c in final_chunks if len(c) > 20]
+    # Drop very tiny residual chunks
+    return [c for c in final_chunks if len(c["text"]) > 20]
