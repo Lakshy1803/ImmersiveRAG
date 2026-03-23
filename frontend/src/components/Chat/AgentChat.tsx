@@ -88,39 +88,65 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
 
     try {
       const baseUrl = window.location.hostname === 'localhost' ? 'http://127.0.0.1:8000' : '';
-      console.log(`[Chat] Sending blocking request to ${baseUrl || 'proxy'}/agent/chat...`);
 
-      const res = await fetch(`${baseUrl}/agent/chat`, {
+      const res = await fetch(`${baseUrl}/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          question: userContent, 
-          agent_id: activeAgentId, 
-          session_id: sessionId 
+        body: JSON.stringify({
+          question: userContent,
+          agent_id: activeAgentId,
+          session_id: sessionId,
         }),
         signal: controller.signal,
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      
-      const data = await res.json();
-      console.log('[Chat] Received response:', data);
+      if (!res.body) throw new Error('No response body');
 
-      // Update the agent message with the full content
-      setMessages(prev => prev.map(m =>
-        m.id === agentMsgId 
-          ? { 
-              ...m, 
-              content: data.answer, 
-              streaming: false, 
-              chunks: data.context_chunks, 
-              cache_hit: data.cache_hit 
-            } 
-          : m
-      ));
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      if (data.context_chunks?.length > 0) {
-        onContextUpdate?.(data.context_chunks);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? ''; // keep incomplete last line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+
+          let event: { type: string; text?: string; chunks?: ChunkNode[]; cache_hit?: boolean; tokens_used?: number };
+          try { event = JSON.parse(raw); } catch { continue; }
+
+          if (event.type === 'context') {
+            // Sources arrived — attach them and mark cache hit
+            setMessages(prev => prev.map(m =>
+              m.id === agentMsgId
+                ? { ...m, chunks: event.chunks, cache_hit: event.cache_hit }
+                : m
+            ));
+            if (event.chunks && event.chunks.length > 0) {
+              onContextUpdate?.(event.chunks);
+            }
+          } else if (event.type === 'chunk' && event.text) {
+            // Append token to the message
+            setMessages(prev => prev.map(m =>
+              m.id === agentMsgId
+                ? { ...m, content: m.content + event.text, streaming: true }
+                : m
+            ));
+          } else if (event.type === 'done') {
+            // Mark streaming complete
+            setMessages(prev => prev.map(m =>
+              m.id === agentMsgId ? { ...m, streaming: false } : m
+            ));
+          }
+        }
       }
 
     } catch (err: unknown) {

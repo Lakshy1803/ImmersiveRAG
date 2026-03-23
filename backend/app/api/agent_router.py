@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
 from typing import List
 from uuid import uuid4
 import json
@@ -85,7 +86,42 @@ async def agent_chat(request: AgentChatRequest):
     )
 
 
-# 🚫 Chat Stream endpoint removed as per simplification request.
+# ── Streaming Chat Endpoint (SSE) ─────────────────────────────────────
+@router.post("/chat/stream")
+async def agent_chat_stream(request: AgentChatRequest):
+    """
+    Full RAG + LLM streaming pipeline.
+    Returns a Server-Sent Events (SSE) stream.
+
+    Event types:
+      data: {"type": "context", "chunks": [...], "cache_hit": bool, "tokens_used": int}
+      data: {"type": "chunk",   "text": "..."}   ← one per LLM token
+      data: {"type": "done"}
+    """
+    agent_def = _get_agent_definition(request.agent_id)
+    if not agent_def:
+        raise HTTPException(status_code=404, detail=f"Agent '{request.agent_id}' not found.")
+
+    from app.engine.agents.graph_runner import stream_agent_graph
+
+    def generate():
+        yield from stream_agent_graph(
+            question=request.question,
+            agent_id=request.agent_id,
+            session_id=request.session_id,
+            system_prompt=agent_def["system_prompt"],
+            model_settings=agent_def.get("model_settings", {}),
+        )
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable Nginx buffering for SSE
+        },
+    )
+
 
 
 @router.get("/registry", response_model=List[AgentDefinition])
