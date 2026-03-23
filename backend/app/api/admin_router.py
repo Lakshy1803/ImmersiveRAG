@@ -27,6 +27,78 @@ class QdrantStatsResponse(BaseModel):
 
 router = APIRouter(prefix="/admin", tags=["Admin & Ingestion"])
 
+
+# ── LLM Runtime Config ─────────────────────────────────────────────────────
+
+class LLMConfigRequest(BaseModel):
+    api_key: str
+    base_url: str
+    model: str
+
+class LLMConfigResponse(BaseModel):
+    success: bool
+    message: str
+    model: str
+
+
+@router.post("/llm-config", response_model=LLMConfigResponse, tags=["LLM Config"])
+async def set_llm_config(request: LLMConfigRequest):
+    """
+    Update the LLM connection settings at runtime without restarting the server.
+    Resets the LLM client singleton so the next chat request uses the new credentials.
+    """
+    from app.core.config import config
+    from app.engine.agents.llm_client import reset_llm_client
+
+    # Update the in-memory config
+    config.llm_api_key = request.api_key
+    config.llm_base_url = request.base_url
+    config.llm_model = request.model
+
+    # Drop the cached client so it reinitialises with new values
+    reset_llm_client()
+
+    return LLMConfigResponse(
+        success=True,
+        message="LLM configuration updated successfully.",
+        model=request.model,
+    )
+
+
+@router.post("/llm-config/test", response_model=LLMConfigResponse, tags=["LLM Config"])
+async def test_llm_config(request: LLMConfigRequest):
+    """
+    Test LLM credentials without saving them.
+    Sends a minimal ping to the model and returns success/failure.
+    """
+    from openai import OpenAI
+    try:
+        client = OpenAI(api_key=request.api_key, base_url=request.base_url or None)
+        # Minimal test: list models or send a tiny completion
+        response = client.chat.completions.create(
+            model=request.model,
+            messages=[{"role": "user", "content": "Say OK"}],
+            max_tokens=5,
+        )
+        reply = response.choices[0].message.content if response.choices else "OK"
+        return LLMConfigResponse(success=True, message=f"Connection successful: {reply}", model=request.model)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Connection test failed: {str(e)}")
+
+
+@router.get("/llm-config", tags=["LLM Config"])
+async def get_llm_config():
+    """Returns the current LLM configuration (API key is masked)."""
+    from app.core.config import config
+    api_key = config.llm_api_key or ""
+    masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else ("***" if api_key else "")
+    return {
+        "api_key_masked": masked,
+        "base_url": config.llm_base_url or "",
+        "model": config.llm_model,
+        "configured": bool(api_key),
+    }
+
 @router.post("/ingest", response_model=IngestStatusResponse)
 async def start_ingestion(
     background_tasks: BackgroundTasks,
