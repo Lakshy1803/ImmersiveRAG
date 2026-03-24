@@ -18,9 +18,9 @@ fastembed>=0.3.0
 
 # LLM & Agent Framework (LangGraph + Groq/OpenAI-compatible)
 langchain-core>=0.3.0
-langchain-openai>=0.2.0
+langchain-openai>=0.3.0
 langgraph>=0.2.0
-openai>=1.30.0
+openai>=2.26.0
 
 # Scheduling
 apscheduler>=3.10.0

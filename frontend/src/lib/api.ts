@@ -44,6 +44,8 @@ export interface AgentChatResponse {
   cache_hit: boolean;
 }
 
+const baseKey = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
+
 export const ImmersiveRagAPI = {
   // ── Ingestion ─────────────────────────────────────────────────────
   ingest: async (file: File, config: { extraction_mode: string; embedding_mode: string; collection_id?: string; tenant_id?: string }): Promise<IngestionJob> => {
@@ -54,7 +56,7 @@ export const ImmersiveRagAPI = {
     if(config.collection_id) formData.append('collection_id', config.collection_id);
     if(config.tenant_id) formData.append('tenant_id', config.tenant_id);
 
-    const response = await fetch('/api/admin/ingest', { method: 'POST', body: formData });
+    const response = await fetch(`${baseKey}/admin/ingest`, { method: 'POST', body: formData });
     if (!response.ok) {
       const e = await response.json().catch(() => ({}));
       throw new Error(e.detail || `Failed to ingest: ${response.statusText}`);
@@ -70,7 +72,7 @@ export const ImmersiveRagAPI = {
     if(config.collection_id) formData.append('collection_id', config.collection_id);
     if(config.tenant_id) formData.append('tenant_id', config.tenant_id);
 
-    const response = await fetch('/api/admin/ingest/bulk', { method: 'POST', body: formData });
+    const response = await fetch(`${baseKey}/admin/ingest/bulk`, { method: 'POST', body: formData });
     if (!response.ok) {
       const e = await response.json().catch(() => ({}));
       throw new Error(e.detail || `Failed to bulk ingest: ${response.statusText}`);
@@ -79,7 +81,7 @@ export const ImmersiveRagAPI = {
   },
 
   checkStatus: async (jobId: string): Promise<IngestionJob> => {
-    const response = await fetch(`/api/admin/ingest/${jobId}/status`);
+    const response = await fetch(`${baseKey}/admin/ingest/${jobId}/status`);
     if (!response.ok) throw new Error(`Failed to check status: ${response.statusText}`);
     return response.json();
   },
@@ -87,7 +89,7 @@ export const ImmersiveRagAPI = {
   // ── Legacy Query (retrieval only, no LLM) ──────────────────────────
   query: async (text: string, sessionId: string, agentId: string = 'default_agent'): Promise<ContextResponse> => {
     const payload = { session_id: sessionId, agent_id: agentId, question: text, top_k: 5, max_tokens: 4000 };
-    const response = await fetch(`/api/agent/query`, {
+    const response = await fetch(`${baseKey}/agent/query`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     });
     if (!response.ok) {
@@ -99,7 +101,7 @@ export const ImmersiveRagAPI = {
 
   // ── Multi-Agent Chat (RAG + LLM generation) ────────────────────────
   chat: async (question: string, agentId: string, sessionId: string): Promise<AgentChatResponse> => {
-    const response = await fetch('/api/agent/chat', {
+    const response = await fetch(`${baseKey}/agent/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, agent_id: agentId, session_id: sessionId }),
@@ -113,14 +115,14 @@ export const ImmersiveRagAPI = {
 
   // ── Agent Registry ─────────────────────────────────────────────────
   listAgents: async (): Promise<AgentDefinition[]> => {
-    const response = await fetch('/api/agent/registry');
+    const response = await fetch(`${baseKey}/agent/registry`);
     if (!response.ok) throw new Error(`Failed to list agents: ${response.statusText}`);
     return response.json();
   },
 
   // ── Agent Configuration (Clone + Customize) ───────────────────────────
   configureAgent: async (request: { agent_id?: string; base_agent_id: string; name: string; system_prompt: string; description?: string; enabled_tools?: string[]; model_settings?: Record<string, any> }): Promise<AgentDefinition> => {
-    const response = await fetch('/api/agent/configure', {
+    const response = await fetch(`${baseKey}/agent/configure`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
@@ -133,7 +135,7 @@ export const ImmersiveRagAPI = {
   },
 
   deleteAgent: async (agentId: string): Promise<void> => {
-    const response = await fetch(`/api/agent/configure/${agentId}`, { method: 'DELETE' });
+    const response = await fetch(`${baseKey}/agent/configure/${agentId}`, { method: 'DELETE' });
     if (!response.ok) {
       const e = await response.json().catch(() => ({}));
       throw new Error(e.detail || `Delete agent failed: ${response.statusText}`);
@@ -142,19 +144,19 @@ export const ImmersiveRagAPI = {
 
   // ── Admin & Stats ──────────────────────────────────────────────────
   getAdminConfig: async () => {
-    const response = await fetch('/api/admin/config/current');
+    const response = await fetch(`${baseKey}/admin/config/current`);
     if (!response.ok) throw new Error("Failed to fetch admin config");
     return response.json();
   },
 
   getQdrantStats: async () => {
-    const response = await fetch('/api/admin/qdrant/stats');
+    const response = await fetch(`${baseKey}/admin/qdrant/stats`);
     if (!response.ok) throw new Error("Failed to fetch vector stats");
     return response.json();
   },
 
   exportToPDF: async (content: string) => {
-    const res = await fetch('/api/agent/tools/export/pdf', {
+    const res = await fetch(`${baseKey}/agent/tools/export/pdf`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content })
@@ -172,7 +174,7 @@ export const ImmersiveRagAPI = {
   },
 
   exportToCSV: async (content: string) => {
-    const res = await fetch('/api/agent/tools/export/csv', {
+    const res = await fetch(`${baseKey}/agent/tools/export/csv`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content })
@@ -190,13 +192,13 @@ export const ImmersiveRagAPI = {
   },
   // ── LLM Config ─────────────────────────────────────────────────────
   getLLMConfig: async (): Promise<{ api_key_masked: string; base_url: string; model: string; configured: boolean }> => {
-    const response = await fetch('/api/admin/llm-config');
+    const response = await fetch(`${baseKey}/admin/llm-config`);
     if (!response.ok) throw new Error(`Failed to get LLM config: ${response.statusText}`);
     return response.json();
   },
 
   saveLLMConfig: async (apiKey: string, baseUrl: string, model: string): Promise<{ success: boolean; message: string; model: string }> => {
-    const response = await fetch('/api/admin/llm-config', {
+    const response = await fetch(`${baseKey}/admin/llm-config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: apiKey, base_url: baseUrl, model }),
@@ -209,7 +211,7 @@ export const ImmersiveRagAPI = {
   },
 
   testLLMConfig: async (apiKey: string, baseUrl: string, model: string): Promise<{ success: boolean; message: string; model: string }> => {
-    const response = await fetch('/api/admin/llm-config/test', {
+    const response = await fetch(`${baseKey}/admin/llm-config/test`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: apiKey, base_url: baseUrl, model }),
