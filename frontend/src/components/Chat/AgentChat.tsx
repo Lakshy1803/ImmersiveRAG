@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChunkNode } from '@/lib/api';
+import { ChunkNode, ImmersiveRagAPI, AgentDefinition } from '@/lib/api';
 
 interface ChatMessage {
   id: string;
@@ -28,10 +28,14 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const [expandedChunks, setExpandedChunks] = useState<Set<string>>(new Set());
+  const [mounted, setMounted] = useState(false);
+  const [activeAgentDef, setActiveAgentDef] = useState<AgentDefinition | null>(null);
+  const [exportingStates, setExportingStates] = useState<Record<string, boolean>>({});
   const endRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    setMounted(true);
     setSessionId(`sess_${Math.random().toString(36).substr(2, 8)}`);
   }, []);
 
@@ -39,13 +43,22 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Reset chat on agent switch
+  // Reset chat on agent switch and fetch agent def
   useEffect(() => {
     setMessages([{
       id: 'welcome',
       role: 'agent',
       content: 'Good morning, Executive. I am ready to analyze your documents. Upload files via the right panel, then ask me anything.',
     }]);
+    
+    // Fetch active agent definition to get enabled_tools
+    ImmersiveRagAPI.listAgents()
+      .then(agents => {
+        const ag = agents.find(a => a.agent_id === activeAgentId);
+        if (ag) setActiveAgentDef(ag);
+      })
+      .catch(console.error);
+
   }, [activeAgentId]);
 
   const toggleChunks = (msgId: string) => {
@@ -75,39 +88,65 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
 
     try {
       const baseUrl = window.location.hostname === 'localhost' ? 'http://127.0.0.1:8000' : '';
-      console.log(`[Chat] Sending blocking request to ${baseUrl || 'proxy'}/agent/chat...`);
 
-      const res = await fetch(`${baseUrl}/agent/chat`, {
+      const res = await fetch(`${baseUrl}/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          question: userContent, 
-          agent_id: activeAgentId, 
-          session_id: sessionId 
+        body: JSON.stringify({
+          question: userContent,
+          agent_id: activeAgentId,
+          session_id: sessionId,
         }),
         signal: controller.signal,
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      
-      const data = await res.json();
-      console.log('[Chat] Received response:', data);
+      if (!res.body) throw new Error('No response body');
 
-      // Update the agent message with the full content
-      setMessages(prev => prev.map(m =>
-        m.id === agentMsgId 
-          ? { 
-              ...m, 
-              content: data.answer, 
-              streaming: false, 
-              chunks: data.context_chunks, 
-              cache_hit: data.cache_hit 
-            } 
-          : m
-      ));
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      if (data.context_chunks?.length > 0) {
-        onContextUpdate?.(data.context_chunks);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? ''; // keep incomplete last line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+
+          let event: { type: string; text?: string; chunks?: ChunkNode[]; cache_hit?: boolean; tokens_used?: number };
+          try { event = JSON.parse(raw); } catch { continue; }
+
+          if (event.type === 'context') {
+            // Sources arrived — attach them and mark cache hit
+            setMessages(prev => prev.map(m =>
+              m.id === agentMsgId
+                ? { ...m, chunks: event.chunks, cache_hit: event.cache_hit }
+                : m
+            ));
+            if (event.chunks && event.chunks.length > 0) {
+              onContextUpdate?.(event.chunks);
+            }
+          } else if (event.type === 'chunk' && event.text) {
+            // Append token to the message
+            setMessages(prev => prev.map(m =>
+              m.id === agentMsgId
+                ? { ...m, content: m.content + event.text, streaming: true }
+                : m
+            ));
+          } else if (event.type === 'done') {
+            // Mark streaming complete
+            setMessages(prev => prev.map(m =>
+              m.id === agentMsgId ? { ...m, streaming: false } : m
+            ));
+          }
+        }
       }
 
     } catch (err: unknown) {
@@ -177,14 +216,34 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
                     {/* No cursor span here */}
 
                     {/* Action buttons for completed agent messages */}
-                    {!msg.streaming && msg.id !== 'welcome' && (
+                    {!msg.streaming && msg.id !== 'welcome' && activeAgentDef?.enabled_tools && activeAgentDef.enabled_tools.length > 0 && (
                       <div className="flex gap-2 mt-4 flex-wrap pt-3 border-t border-outline-variant/10">
-                        <button className="px-4 py-1.5 rounded-full bg-surface-container-high text-[9px] font-bold uppercase tracking-wider text-on-surface/50 hover:text-white hover:bg-primary border border-transparent transition-all shadow-sm">
-                          Generate PDF Report
-                        </button>
-                        <button className="px-4 py-1.5 rounded-full bg-surface-container-high text-[9px] font-bold uppercase tracking-wider text-on-surface/50 hover:text-white hover:bg-primary border border-transparent transition-all shadow-sm">
-                          Export Data
-                        </button>
+                        {activeAgentDef.enabled_tools.includes('export_pdf') && (
+                          <button 
+                            onClick={async () => {
+                              setExportingStates(prev => ({...prev, [`${msg.id}-pdf`]: true}));
+                              try { await ImmersiveRagAPI.exportToPDF(msg.content); } catch (e) { alert("Failed to export PDF"); }
+                              setExportingStates(prev => ({...prev, [`${msg.id}-pdf`]: false}));
+                            }}
+                            disabled={exportingStates[`${msg.id}-pdf`]}
+                            className="px-4 py-1.5 rounded-full bg-surface-container-high text-[9px] font-bold uppercase tracking-wider text-on-surface/50 hover:text-white hover:bg-primary border border-transparent transition-all shadow-sm disabled:opacity-50"
+                          >
+                            {exportingStates[`${msg.id}-pdf`] ? 'Exporting...' : 'Generate PDF Report'}
+                          </button>
+                        )}
+                        {activeAgentDef.enabled_tools.includes('export_csv') && (
+                          <button 
+                            onClick={async () => {
+                              setExportingStates(prev => ({...prev, [`${msg.id}-csv`]: true}));
+                              try { await ImmersiveRagAPI.exportToCSV(msg.content); } catch (e) { alert("Failed to export CSV"); }
+                              setExportingStates(prev => ({...prev, [`${msg.id}-csv`]: false}));
+                            }}
+                            disabled={exportingStates[`${msg.id}-csv`]}
+                            className="px-4 py-1.5 rounded-full bg-surface-container-high text-[9px] font-bold uppercase tracking-wider text-on-surface/50 hover:text-white hover:bg-primary border border-transparent transition-all shadow-sm disabled:opacity-50"
+                          >
+                            {exportingStates[`${msg.id}-csv`] ? 'Exporting...' : 'Export Data (CSV)'}
+                          </button>
+                        )}
                       </div>
                     )}
                   </>
@@ -227,7 +286,7 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
               )}
 
               <span className={`text-[10px] text-on-surface/30 px-1 font-mono uppercase tracking-widest ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                {msg.role === 'agent' ? 'Luminary' : 'Executive'} • {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {msg.role === 'agent' ? 'Luminary' : 'Executive'} • {mounted ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
               </span>
             </div>
 
@@ -245,7 +304,7 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
       <div className="fixed bottom-0 left-64 right-72 px-6 pb-8 pt-4 bg-gradient-to-t from-background via-background/90 to-transparent z-30 transition-colors">
         <div className="max-w-4xl mx-auto">
           <form onSubmit={handleSend} className="bg-surface-container dark:bg-surface-container/90 backdrop-blur-xl p-1.5 rounded-full flex items-center gap-2 border border-outline-variant shadow-xl dark:shadow-2xl transition-all h-[64px]">
-            <button type="button" className="w-11 h-11 flex items-center justify-center text-on-surface/50 hover:text-primary transition-all ml-2">
+            <button suppressHydrationWarning type="button" className="w-11 h-11 flex items-center justify-center text-on-surface/50 hover:text-primary transition-all ml-2">
               <span className="material-symbols-outlined">attach_file</span>
             </button>
             <input
@@ -261,6 +320,7 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
             {isLoading ? (
               <button
                 type="button"
+                suppressHydrationWarning
                 onClick={() => { abortRef.current?.abort(); setIsLoading(false); }}
                 className="h-11 px-6 bg-red-500/80 rounded-full flex items-center justify-center text-white hover:bg-red-600 active:scale-95 transition-all shadow-lg mr-1 text-xs font-bold gap-1.5"
               >
@@ -270,6 +330,7 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
             ) : (
               <button
                 type="submit"
+                suppressHydrationWarning
                 disabled={!input.trim()}
                 className="h-11 px-8 bg-primary rounded-full flex items-center justify-center text-white hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-primary/20 mr-1 disabled:opacity-50 disabled:grayscale"
               >

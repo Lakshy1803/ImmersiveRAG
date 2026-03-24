@@ -24,7 +24,7 @@ Browser (localhost:3000)
 FastAPI (127.0.0.1:8000)
   ├── POST /admin/ingest          Ingestion pipeline → SQLite job queue
   ├── APScheduler (every 5s)     embedder.py → Qdrant vector store
-  ├── POST /agent/chat/stream     SSE Streaming: retrieve → generate (Groq/OpenAI)
+  ├── POST /agent/chat            Full RAG Chat: retrieve → generate (Groq/OpenAI)
   ├── GET  /agent/registry        Lists base + user-configured agents
   ├── POST /agent/configure       Clone & customize agents (saved to SQLite)
   └── DELETE /admin/debug/purge-vectors   Full wipe (Qdrant + SQLite)
@@ -206,6 +206,7 @@ This physically deletes the Qdrant data directory and clears all SQLite state (j
 | `OpenAI API error` with corporate key | Verify `BASE_URL` ends with `/v1` and key is correct |
 | `summary_digest` column error | Restart backend — auto-migration runs on startup |
 | `[SSL: CERTIFICATE_VERIFY_FAILED]` | Set `IMMERSIVE_RAG_BYPASS_SSL_VERIFY=true` in `.env` |
+| Navigation logic mismatch | Hydration fixes applied (`suppressHydrationWarning`) |
 
 ---
 

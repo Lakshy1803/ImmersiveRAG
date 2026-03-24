@@ -28,6 +28,7 @@ _BASE_AGENTS = [
         ),
         "icon": "description",
         "is_system": 1,
+        "enabled_tools": '["export_pdf", "export_csv"]'
     },
     {
         "agent_id": "general_assistant",
@@ -41,6 +42,7 @@ _BASE_AGENTS = [
         ),
         "icon": "smart_toy",
         "is_system": 1,
+        "enabled_tools": '["export_pdf"]'
     },
 ]
 
@@ -103,11 +105,20 @@ def init_db():
                 base_agent_id TEXT,
                 icon TEXT DEFAULT 'smart_toy',
                 config_json TEXT DEFAULT '{}',
+                enabled_tools TEXT DEFAULT '[]',
                 is_system BOOLEAN DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+
+        # Migration: add enabled_tools to existing tables
+        try:
+            cursor.execute("ALTER TABLE agent_definitions ADD COLUMN enabled_tools TEXT DEFAULT '[]'")
+            conn.commit()
+        except:
+            pass
+
 
         # Conversation Message Log — for history + summary generation
         cursor.execute('''
@@ -126,12 +137,12 @@ def init_db():
         # Seed base agents (upsert — doesn't overwrite user edits if they exist)
         for agent in _BASE_AGENTS:
             cursor.execute('''
-                INSERT INTO agent_definitions (agent_id, name, description, system_prompt, icon, is_system)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO agent_definitions (agent_id, name, description, system_prompt, icon, is_system, enabled_tools)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(agent_id) DO NOTHING
             ''', (
                 agent["agent_id"], agent["name"], agent["description"],
-                agent["system_prompt"], agent["icon"], agent["is_system"]
+                agent["system_prompt"], agent["icon"], agent["is_system"], agent.get("enabled_tools", '[]')
             ))
         
         conn.commit()

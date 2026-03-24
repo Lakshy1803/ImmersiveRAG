@@ -91,6 +91,18 @@ IMMERSIVE_RAG_OPENAI_API_KEY=<company-embedding-api-key>
 IMMERSIVE_RAG_OPENAI_BASE_URL=<company-embedding-base-url>
 IMMERSIVE_RAG_EMBEDDING_MODEL=<company-model-name>          # e.g. text-embedding-3-small
 IMMERSIVE_RAG_LLAMA_PARSE_API_KEY=<optional-llamaparse-key>
+IMMERSIVE_RAG_BYPASS_SSL_VERIFY=true                        # Set to true for corporate proxies
 ```
 If `IMMERSIVE_RAG_OPENAI_API_KEY` is unset → embedding falls back to local FastEmbed (384-dim).
 If `IMMERSIVE_RAG_LLAMA_PARSE_API_KEY` is unset → cloud_llamaparse extraction will fail; use `local_markdown`.
+
+## LangGraph Orchestration (`graph_runner.py`)
+The system uses a 2-node sync graph:
+1. `retrieve_node`: Uses `RetrievalOrchestrator` to fetch top-5 chunks from Qdrant.
+2. `generate_node`: Builds a prompt with context + history and calls the LLM (Groq/OpenAI).
+Flow: `START` → `retrieve` → `generate` → `END`.
+
+## Memory Strategy
+- **Tier 1 (Short):** `session_context_cache` (SQLite) - avoids re-embedding/re-searching duplicate queries.
+- **Tier 2 (History):** `conversation_messages` (SQLite) - full turn tracking for the agent.
+- **Tier 3 (Summary):** `agent_sessions.summary_digest` - a rolling summary updated every 4 turns to keep long conversations within LLM context limits.

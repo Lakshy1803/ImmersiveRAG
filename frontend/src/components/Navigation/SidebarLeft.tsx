@@ -14,6 +14,13 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
   const [activeAgent, setActiveAgent] = useState<AgentDefinition | null>(null);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [editAgent, setEditAgent] = useState<AgentDefinition | null>(null);
+
+  // Stats and Config States
+  const [config, setConfig] = useState<any>(null);
+  const [stats, setStats] = useState<any>(null);
+  const [settingsExpanded, setSettingsExpanded] = useState(false);
+  const [kbExpanded, setKbExpanded] = useState(false);
 
   const fetchAgents = async () => {
     try {
@@ -23,11 +30,15 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
       setActiveAgent(current);
     } catch {
       // Backend may not be ready — use a placeholder
-      setActiveAgent({ agent_id: activeAgentId, name: "Document Analyzer", description: "", system_prompt: "", icon: "description", is_system: true, base_agent_id: null });
+      setActiveAgent({ agent_id: activeAgentId, name: "Document Analyzer", description: "", system_prompt: "", icon: "description", is_system: true, base_agent_id: null, enabled_tools: [] });
     }
   };
 
-  useEffect(() => { fetchAgents(); }, [activeAgentId]);
+  useEffect(() => { 
+    fetchAgents(); 
+    ImmersiveRagAPI.getAdminConfig().then(setConfig).catch(console.error);
+    ImmersiveRagAPI.getQdrantStats().then(setStats).catch(console.error);
+  }, [activeAgentId]);
 
   const handleSelectAgent = (agent: AgentDefinition) => {
     setActiveAgent(agent);
@@ -53,6 +64,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
           <div className="relative mb-8">
             <button
               onClick={() => setSelectorOpen(!selectorOpen)}
+              suppressHydrationWarning
               className="w-full flex items-center justify-between gap-3 p-3 bg-surface-container-low rounded-full border border-outline-variant/30 hover:border-primary/50 transition-colors shadow-sm text-left group"
             >
               <div className="flex items-center gap-3">
@@ -76,10 +88,10 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
                     {baseAgents.map(agent => (
                       <button key={agent.agent_id} onClick={() => handleSelectAgent(agent)}
                         className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-primary/10 transition-all text-left ${activeAgentId === agent.agent_id ? "border-l-2 border-primary bg-primary/5" : ""}`}>
-                        <span className="material-symbols-outlined text-primary text-sm">{agent.icon}</span>
-                        <div>
-                          <p className="text-on-surface font-semibold text-xs">{agent.name}</p>
-                          <p className="text-on-surface/40 text-[10px] truncate max-w-[140px]">{agent.description}</p>
+                        <span className="material-symbols-outlined text-primary text-sm flex-shrink-0">{agent.icon}</span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-on-surface font-semibold text-xs truncate">{agent.name}</p>
+                          <p className="text-on-surface/40 text-[10px] truncate">{agent.description}</p>
                         </div>
                       </button>
                     ))}
@@ -92,15 +104,19 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
                     {customAgents.map(agent => (
                       <button key={agent.agent_id} onClick={() => handleSelectAgent(agent)}
                         className={`w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-primary/10 transition-all text-left ${activeAgentId === agent.agent_id ? "border-l-2 border-primary bg-primary/5" : ""}`}>
-                        <div className="flex items-center gap-3">
-                          <span className="material-symbols-outlined text-on-surface/50 text-sm">{agent.icon}</span>
-                          <div>
-                            <p className="text-on-surface font-semibold text-xs">{agent.name}</p>
-                            <p className="text-on-surface/40 text-[10px] truncate max-w-[100px]">{agent.description || "Custom"}</p>
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="material-symbols-outlined text-on-surface/50 text-sm flex-shrink-0">{agent.icon}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-on-surface font-semibold text-xs truncate">{agent.name}</p>
+                            <p className="text-on-surface/40 text-[10px] truncate">{agent.description || "Custom"}</p>
                           </div>
                         </div>
-                        <span onClick={(e) => handleDeleteAgent(agent.agent_id, e)}
-                          className="material-symbols-outlined text-sm text-on-surface/30 hover:text-red-500 transition-colors flex-shrink-0">delete</span>
+                        <div className="flex items-center gap-2">
+                          <span onClick={(e) => { e.stopPropagation(); setEditAgent(agent); setConfigModalOpen(true); setSelectorOpen(false); }}
+                            className="material-symbols-outlined text-sm text-on-surface/30 hover:text-primary transition-colors flex-shrink-0">edit</span>
+                          <span onClick={(e) => handleDeleteAgent(agent.agent_id, e)}
+                            className="material-symbols-outlined text-sm text-on-surface/30 hover:text-red-500 transition-colors flex-shrink-0">delete</span>
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -109,7 +125,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
                 {/* Configure New Agent */}
                 <div className="border-t border-outline-variant/20 p-2">
                   <button
-                    onClick={() => { setSelectorOpen(false); setConfigModalOpen(true); }}
+                    onClick={() => { setEditAgent(null); setSelectorOpen(false); setConfigModalOpen(true); }}
                     className="w-full flex items-center gap-2 px-4 py-2.5 text-primary hover:bg-primary/10 rounded-xl transition-all text-xs font-bold"
                   >
                     <span className="material-symbols-outlined text-sm">add_circle</span>
@@ -121,7 +137,10 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
           </div>
 
           {/* New Chat */}
-          <button className="w-full bg-primary text-white py-3 rounded-full font-bold text-sm mb-8 flex items-center justify-center gap-2 hover:brightness-110 transition-all active:scale-95 shadow-md shadow-primary/10">
+          <button 
+            suppressHydrationWarning
+            className="w-full bg-primary text-white py-3 rounded-full font-bold text-sm mb-8 flex items-center justify-center gap-2 hover:brightness-110 transition-all active:scale-95 shadow-md shadow-primary/10"
+          >
             <span className="material-symbols-outlined text-sm">add</span>
             New Chat
           </button>
@@ -130,17 +149,105 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
             <a className="flex items-center gap-3 px-6 py-3 text-primary font-bold bg-surface-container-high rounded-full text-sm shadow-sm" href="#">
               <span className="material-symbols-outlined">history</span>Chat History
             </a>
-            <a className="flex items-center justify-between px-6 py-3 text-on-surface/70 hover:text-primary hover:bg-surface-container-low transition-all text-sm rounded-full" href="#">
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined">settings_input_component</span>
-                Model Settings
-              </div>
-              <span className="material-symbols-outlined text-sm opacity-50">expand_more</span>
-            </a>
-            <button className="w-full flex items-center gap-3 px-6 py-3 text-on-surface/70 hover:text-white hover:bg-primary transition-all text-sm rounded-full group">
-              <span className="material-symbols-outlined group-hover:text-white">database</span>
-              Knowledge Base
-            </button>
+            <div className="flex flex-col">
+              <button 
+                onClick={() => setSettingsExpanded(!settingsExpanded)}
+                className="w-full flex items-center justify-between px-6 py-3 text-on-surface/70 hover:text-primary hover:bg-surface-container-low transition-all text-sm rounded-full"
+              >
+                <div className="flex items-center gap-3 whitespace-nowrap">
+                  <span className="material-symbols-outlined">settings_input_component</span>
+                  Model Settings
+                </div>
+                <span className="material-symbols-outlined text-sm opacity-50 flex-shrink-0">
+                  {settingsExpanded ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+
+              {settingsExpanded && (
+                <div className="px-6 pb-4 pt-2 space-y-3 text-[10px] text-on-surface/50">
+                  {config ? (
+                    (() => {
+                      const displayTemp = activeAgent?.model_settings?.temperature ?? config.temperature;
+                      const displayTokens = activeAgent?.model_settings?.max_tokens ?? config.llm_max_answer_tokens;
+                      const isCustomTemp = activeAgent?.model_settings?.temperature !== undefined;
+                      const isCustomTokens = activeAgent?.model_settings?.max_tokens !== undefined;
+                      
+                      return (
+                        <>
+                            <div className="flex flex-col">
+                              <span className="uppercase tracking-widest font-bold opacity-60 text-[8px] mb-0.5">Embedding Model</span>
+                              <span className="font-mono text-primary font-bold truncate leading-tight" title={config.embedding_model}>{config.embedding_model}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="uppercase tracking-widest font-bold opacity-60 text-[8px] mb-0.5">Generation Model</span>
+                              <span className="font-mono text-primary font-bold truncate leading-tight" title={config.generation_model}>{config.generation_model}</span>
+                            </div>
+                            <div className="flex flex-col border-t border-outline-variant/10 pt-2">
+                              <span className="uppercase tracking-widest font-bold opacity-60 text-[8px] mb-0.5">Temperature</span>
+                              <span className={`font-mono font-bold ${isCustomTemp ? 'text-primary' : 'text-on-surface/80'}`}>
+                                {displayTemp} {isCustomTemp && <span className="text-[8px] ml-1 opacity-70">(Custom)</span>}
+                              </span>
+                            </div>
+                            <div className="flex flex-col border-t border-outline-variant/10 pt-2">
+                              <span className="uppercase tracking-widest font-bold opacity-60 text-[8px] mb-0.5">Max Output</span>
+                              <span className={`font-mono font-bold ${isCustomTokens ? 'text-primary' : 'text-on-surface/80'}`}>
+                                {displayTokens} tkns {isCustomTokens && <span className="text-[8px] ml-1 opacity-70">(Custom)</span>}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between border-t border-outline-variant/10 pt-2">
+                              <span className="uppercase tracking-widest font-bold opacity-60 text-[8px]">Context Window</span>
+                              <span className="font-mono font-bold text-on-surface/80">{config.max_context_tokens} tkns</span>
+                            </div>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <div className="text-center italic pb-2">Loading params...</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col">
+              <button 
+                suppressHydrationWarning
+                onClick={() => setKbExpanded(!kbExpanded)}
+                className="w-full flex items-center justify-between px-6 py-3 text-on-surface/70 hover:text-white hover:bg-primary transition-all text-sm rounded-full group"
+              >
+                <div className="flex items-center gap-3 whitespace-nowrap">
+                  <span className="material-symbols-outlined group-hover:text-white">database</span>
+                  Knowledge Base
+                </div>
+                <span className="material-symbols-outlined text-sm opacity-50 group-hover:text-white flex-shrink-0">
+                  {kbExpanded ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+
+              {kbExpanded && (
+                <div className="px-6 pb-4 pt-2 space-y-3 text-[10px] text-on-surface/50">
+                  {stats ? (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="uppercase tracking-widest font-bold opacity-60 text-[8px]">Status</span>
+                        <span className={`font-mono font-bold uppercase ${stats.status === 'green' ? 'text-green-500' : 'text-red-500'}`}>
+                          {stats.status}
+                        </span>
+                      </div>
+                      <div className="flex flex-col border-t border-outline-variant/10 pt-2">
+                        <span className="uppercase tracking-widest font-bold opacity-60 text-[8px] mb-0.5">Collection</span>
+                        <span className="font-mono text-primary font-bold truncate leading-tight" title={stats.collection_name}>{stats.collection_name}</span>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-outline-variant/10 pt-2">
+                        <span className="uppercase tracking-widest font-bold opacity-60 text-[8px]">Vectors Configured</span>
+                        <span className="font-mono font-bold text-on-surface/80">{stats.vector_count.toLocaleString()}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center italic pb-2">Loading stats...</div>
+                  )}
+                </div>
+              )}
+            </div>
           </nav>
         </div>
 
@@ -157,11 +264,13 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
       {/* Agent Config Modal */}
       <AgentConfigModal
         isOpen={configModalOpen}
-        onClose={() => setConfigModalOpen(false)}
+        onClose={() => { setConfigModalOpen(false); setEditAgent(null); }}
+        editAgent={editAgent}
         onSaved={(newAgent) => {
           fetchAgents();
           onAgentChange(newAgent.agent_id);
           setConfigModalOpen(false);
+          setEditAgent(null);
         }}
         baseAgents={baseAgents}
       />

@@ -41,6 +41,7 @@ const ThemeToggle: React.FC = () => {
   return (
     <button
       onClick={toggleTheme}
+      suppressHydrationWarning
       className="flex items-center gap-2 px-4 py-2 rounded-full bg-surface-container-high border border-outline-variant/30 hover:border-primary/50 transition-all shadow-sm group"
       aria-label="Toggle Theme"
     >
