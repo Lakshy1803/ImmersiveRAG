@@ -251,7 +251,7 @@ ImmersiveRAG/
     │   │   └── globals.css          Corporate Luminary design system
     │   ├── components/
     │   │   ├── Navigation/
-    │   │   │   ├── Header.tsx       Top bar with PwC logo + theme toggle
+    │   │   │   ├── Header.tsx       Top bar with logo + theme toggle
     │   │   │   ├── SidebarLeft.tsx  Agent selector dropdown
     │   │   │   └── SidebarRight.tsx Context viewer + document uploader
     │   │   ├── Chat/

@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], display: 'swap' });
 
 export const metadata: Metadata = {
-  title: "Corporate Luminary AI | PwC ImmersiveRAG",
+  title: "Document Reader",
   description: "Next.js Executive Console for corporate vector layers and agentic context",
 };
 

@@ -29,7 +29,7 @@ def get_corporate_embeddings(texts: List[str], embedding_mode: str = "local_fast
             # Handle SSL verification bypass specifically for the first-time model download
             if config.bypass_ssl_verify:
                 import ssl
-                logger.warning("Bypassing SSL verification for local model download (PwC compliance).")
+                logger.warning("Bypassing SSL verification for local model download.")
                 ssl._create_default_https_context = ssl._create_unverified_context
                 
             from fastembed import TextEmbedding

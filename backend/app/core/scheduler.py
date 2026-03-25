@@ -152,7 +152,7 @@ def start_scheduler():
             id="poll_ingestion",
             replace_existing=True,
             max_instances=1,
-            misfire_grace_time=60  # Allow some delay without warning (PwC proxy latency)
+            misfire_grace_time=60  
         )
         
         # Prune memory every 5 minutes
