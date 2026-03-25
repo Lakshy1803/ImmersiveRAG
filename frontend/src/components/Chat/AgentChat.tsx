@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChunkNode, ImmersiveRagAPI, AgentDefinition } from '@/lib/api';
+import { ChunkNode, ImmersiveRagAPI, AgentDefinition, getApiBaseUrl } from '@/lib/api';
 
 interface ChatMessage {
   id: string;
@@ -87,7 +87,7 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
     abortRef.current = controller;
 
     try {
-      const baseUrl = window.location.hostname === 'localhost' ? 'http://127.0.0.1:8000' : '';
+      const baseUrl = getApiBaseUrl();
 
       const res = await fetch(`${baseUrl}/agent/chat/stream`, {
         method: 'POST',
