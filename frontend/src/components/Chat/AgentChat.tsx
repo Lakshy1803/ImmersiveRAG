@@ -87,7 +87,7 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
     abortRef.current = controller;
 
     try {
-      const baseUrl = window.location.hostname === 'localhost' ? 'http://127.0.0.1:8000' : '';
+      const baseUrl = getApiBaseUrl();
 
       const res = await fetch(`${baseUrl}/agent/chat/stream`, {
         method: 'POST',
