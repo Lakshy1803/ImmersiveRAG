@@ -50,9 +50,8 @@ export interface AgentChatResponse {
   cache_hit: boolean;
 }
 
-export const getApiBaseUrl = (): string => process.env.NEXT_PUBLIC_API_BASE_URL ?? '/api';
+export const getApiBaseUrl = (): string => process.env.NEXT_PUBLIC_API_BASE_URL ?? '';
 const baseKey = getApiBaseUrl();
-
 
 export const ImmersiveRagAPI = {
   // ── Ingestion ─────────────────────────────────────────────────────

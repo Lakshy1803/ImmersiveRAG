@@ -87,7 +87,9 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
     abortRef.current = controller;
 
     try {
-      const res = await fetch(`/api/agent/chat/stream`, {
+      const baseUrl = getApiBaseUrl();
+
+      const res = await fetch(`${baseUrl}/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
