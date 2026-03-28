@@ -21,6 +21,7 @@ class AppConfig(BaseSettings):
 
     # Ingestion Configuration
     llamaparse_api_key: Optional[str] = Field(default=None, env="IMMERSIVE_RAG_LLAMA_PARSE_API_KEY")
+    tesseract_cmd_path: Optional[str] = Field(default=None, env="IMMERSIVE_RAG_TESSERACT_CMD_PATH")
 
     # ── Company Embedding API (OpenAI-compatible) ──────────────────────────
     # If embedding_api_key is unset → falls back to local FastEmbed (384-dim)

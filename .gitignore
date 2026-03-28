@@ -12,6 +12,8 @@ backend/.pytest_cache/
 
 # ── Application Runtime Data (auto-generated, not source code) ──────────────
 backend/data/
+backend/reports/
+backend/local_bin/
 backend/.tmp_data/
 backend/.llamaparse_images/
 backend/.e2e_runtime/

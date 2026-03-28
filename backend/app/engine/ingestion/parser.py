@@ -14,10 +14,9 @@ async def run_llamaparse_extraction(file_path: str) -> list[dict]:
         raise FileNotFoundError(f"File not found: {file_path}")
         
     if not config.llamaparse_api_key:
-        logger.warning("IMMERSIVE_RAG_LLAMA_PARSE_API_KEY missing. Returning simulated mock parser markdown.")
-        import asyncio
-        await asyncio.sleep(2) # simulate parsing delay
-        return [{"text": f"# MOCK PARSED DOCUMENT: {os.path.basename(file_path)}\n\nThis is a simulated document chunk generated because LlamaParse API keys were missing. It contains enough content to verify the embedding generation and Qdrant ingestion stages.", "metadata": {"page": "1"}}]
+        logger.info("IMMERSIVE_RAG_LLAMA_PARSE_API_KEY missing. Falling back to local PyMuPDF + Tesseract OCR pipeline.")
+        from app.engine.document_processing.ocr_parser import extract_text_from_pdf_locally
+        return extract_text_from_pdf_locally(file_path)
         
     logger.info(f"Starting LlamaParse extraction for {file_path} with VPN OFF assumed.")
     

@@ -33,6 +33,11 @@ python-docx>=1.0.0
 python-pptx>=0.6.0
 openpyxl>=3.1.0
 
+# Local Offline PDF / Image OCR (Windows Compatible)
+pymupdf>=1.24.0
+pytesseract>=0.3.10
+easyocr>=1.7.0
+
 # Cloud Parsing (optional — for LlamaParse mode)
 llama-parse>=0.4.0
 
