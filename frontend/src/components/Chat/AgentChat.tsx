@@ -87,9 +87,7 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
     abortRef.current = controller;
 
     try {
-      const baseUrl = window.location.hostname === 'localhost' ? 'http://127.0.0.1:8000' : '';
-
-      const res = await fetch(`${baseUrl}/agent/chat/stream`, {
+      const res = await fetch(`/api/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -184,8 +182,8 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
 
               {/* Message Bubble */}
               <div className={`p-5 rounded-2xl border border-outline-variant/20 shadow-sm text-sm leading-relaxed ${msg.role === 'user'
-                  ? 'bg-surface-container-highest rounded-tr-none text-on-surface'
-                  : 'bg-surface-container-low rounded-tl-none text-on-surface'
+                ? 'bg-surface-container-highest rounded-tr-none text-on-surface'
+                : 'bg-surface-container-low rounded-tl-none text-on-surface'
                 }`}>
                 {msg.role === 'user' ? (
                   <p>{msg.content}</p>
