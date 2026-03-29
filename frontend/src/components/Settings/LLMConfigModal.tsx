@@ -46,11 +46,15 @@ export function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps) {
     setSaveStatus('idle');
   }, [isOpen]);
 
+  // Reset test status when any input changes
+  useEffect(() => {
+    setTestStatus('idle');
+    setTestMessage('');
+  }, [apiKey, baseUrl, model]);
+
   const handlePreset = (preset: typeof PRESETS[0]) => {
     setBaseUrl(preset.baseUrl);
     setModel(preset.model);
-    setTestStatus('idle');
-    setTestMessage('');
   };
 
   const handleTest = async () => {
@@ -79,11 +83,12 @@ export function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps) {
     setSaveStatus('saving');
     try {
       await ImmersiveRagAPI.saveLLMConfig(apiKey.trim(), baseUrl.trim(), model.trim());
-      // Persist to localStorage
+      // Persist to localStorage including the verification status
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         apiKey: apiKey.trim(),
         baseUrl: baseUrl.trim(),
         model: model.trim(),
+        verified: testStatus === 'success', // Track if the key was verified before saving
       }));
       setSaveStatus('saved');
       setTimeout(() => {
@@ -136,11 +141,10 @@ export function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps) {
                 <button
                   key={p.label}
                   onClick={() => handlePreset(p)}
-                  className={`text-left px-3 py-2 rounded-lg border text-xs transition-all ${
-                    baseUrl === p.baseUrl && model === p.model
+                  className={`text-left px-3 py-2 rounded-lg border text-xs transition-all ${baseUrl === p.baseUrl && model === p.model
                       ? 'border-primary/60 bg-primary/10 text-primary'
                       : 'border-outline-variant/30 bg-surface-container-high/30 text-on-surface/70 hover:border-outline-variant/60 hover:bg-surface-container-high/60'
-                  }`}
+                    }`}
                 >
                   {p.label}
                 </button>
@@ -197,13 +201,12 @@ export function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps) {
 
           {/* Test result banner */}
           {testStatus !== 'idle' && testMessage && (
-            <div className={`flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs ${
-              testStatus === 'success'
+            <div className={`flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs ${testStatus === 'success'
                 ? 'bg-green-500/10 border border-green-500/30 text-green-400'
                 : testStatus === 'error'
-                ? 'bg-red-500/10 border border-red-500/30 text-red-400'
-                : 'bg-primary/10 border border-primary/30 text-primary'
-            }`}>
+                  ? 'bg-red-500/10 border border-red-500/30 text-red-400'
+                  : 'bg-primary/10 border border-primary/30 text-primary'
+              }`}>
               {testStatus === 'success' && <CheckCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />}
               {testStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />}
               {testStatus === 'testing' && <Loader2 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 animate-spin" />}
@@ -237,11 +240,10 @@ export function LLMConfigModal({ isOpen, onClose }: LLMConfigModalProps) {
             <button
               onClick={handleSave}
               disabled={!apiKey.trim() || saveStatus === 'saving' || saveStatus === 'saved'}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all disabled:cursor-not-allowed ${
-                saveStatus === 'saved'
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all disabled:cursor-not-allowed ${saveStatus === 'saved'
                   ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                   : 'bg-primary text-on-primary hover:bg-primary/90 disabled:opacity-50'
-              }`}
+                }`}
             >
               {saveStatus === 'saving' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {saveStatus === 'saved' && <CheckCircle className="w-3.5 h-3.5" />}

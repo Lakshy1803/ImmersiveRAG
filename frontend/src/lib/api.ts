@@ -226,4 +226,37 @@ export const ImmersiveRagAPI = {
     }
     return response.json();
   },
+
+  // ── Embedding Config ───────────────────────────────────────────────
+  getEmbeddingConfig: async (): Promise<{ api_key_masked: string; base_url: string; model: string; configured: boolean }> => {
+    const response = await fetch('/api/admin/embedding-config');
+    if (!response.ok) throw new Error(`Failed to get embedding config: ${response.statusText}`);
+    return response.json();
+  },
+
+  saveEmbeddingConfig: async (apiKey: string, baseUrl: string, model: string): Promise<{ success: boolean; message: string; model: string }> => {
+    const response = await fetch('/api/admin/embedding-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: apiKey, base_url: baseUrl, model }),
+    });
+    if (!response.ok) {
+      const e = await response.json().catch(() => ({}));
+      throw new Error(e.detail || `Failed to save embedding config: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  testEmbeddingConfig: async (apiKey: string, baseUrl: string, model: string): Promise<{ success: boolean; message: string; model: string }> => {
+    const response = await fetch('/api/admin/embedding-config/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: apiKey, base_url: baseUrl, model }),
+    });
+    if (!response.ok) {
+      const e = await response.json().catch(() => ({}));
+      throw new Error(e.detail || `Embedding test failed: ${response.statusText}`);
+    }
+    return response.json();
+  },
 };

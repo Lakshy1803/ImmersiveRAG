@@ -99,6 +99,50 @@ async def get_llm_config():
         "configured": bool(api_key),
     }
 
+class EmbeddingConfigRequest(BaseModel):
+    api_key: str
+    base_url: str
+    model: str
+class EmbeddingConfigResponse(BaseModel):
+    success: bool
+    message: str
+    model: str
+
+
+@router.post("/embedding-config", response_model=EmbeddingConfigResponse, tags=["Embedding Config"])
+async def set_embedding_config(request: EmbeddingConfigRequest):
+    """Update embedding connection settings at runtime. Resets the embedder singleton."""
+    from app.core.config import config
+    from app.engine.ingestion.embedder import reset_embedding_client
+    config.embedding_api_key = request.api_key
+    config.embedding_base_url = request.base_url
+    config.embedding_model = request.model
+    reset_embedding_client()
+    return EmbeddingConfigResponse(success=True, message="Embedding configuration updated.", model=request.model)
+@router.get("/embedding-config", tags=["Embedding Config"])
+async def get_embedding_config():
+    """Returns current embedding config (API key masked)."""
+    from app.core.config import config
+    api_key = config.embedding_api_key or ""
+    masked = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else ("***" if api_key else "")
+    return {
+        "api_key_masked": masked,
+        "base_url": config.embedding_base_url or "",
+        "model": config.embedding_model,
+        "configured": bool(api_key),
+    }
+@router.post("/embedding-config/test", response_model=EmbeddingConfigResponse, tags=["Embedding Config"])
+async def test_embedding_config(request: EmbeddingConfigRequest):
+    """Test embedding credentials without saving. Embeds a small probe text."""
+    from openai import OpenAI
+    try:
+        client = OpenAI(api_key=request.api_key, base_url=request.base_url or None)
+        response = client.embeddings.create(input=["ping"], model=request.model)
+        dims = len(response.data[0].embedding)
+        return EmbeddingConfigResponse(success=True, message=f"OK — {dims}-dim vector returned.", model=request.model)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Embedding test failed: {str(e)}")
+
 @router.post("/ingest", response_model=IngestStatusResponse)
 async def start_ingestion(
     background_tasks: BackgroundTasks,
