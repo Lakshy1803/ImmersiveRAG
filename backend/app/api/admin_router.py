@@ -252,6 +252,8 @@ async def get_current_config(config: AppConfig = Depends(get_config)):
         max_context_tokens=config.max_context_tokens,
         llm_max_answer_tokens=config.llm_max_answer_tokens,
         sliding_window_size=config.sliding_window_size,
+        temperature=config.temperature,
+        top_k=config.top_k
     )
 
 @router.get("/qdrant/stats", response_model=QdrantStatsResponse)
