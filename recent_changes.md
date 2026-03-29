@@ -27,3 +27,8 @@
 - **Sticky Actions**: Agent Selector, New Chat, and Chat History are now **static top-level elements**.
 - **Static Footer**: Help Center and Account links are now pinned to the bottom.
 - **Smooth Interaction**: Only the "Model Settings" and "Knowledge Base" sections are scrollable, featuring a thin, elegant custom scrollbar.
+
+## 🛠️ 5. Backend Hardening & Configuration
+- **Env Variable Support**: Core RAG parameters (`max_context_tokens`, `temperature`, `top_k`) are now fully configurable via `.env` without code changes.
+- **Dynamic Config**: The `GET /admin/config/current` endpoint now pulls live values from the system configuration, ensuring the UI accurately reflects the backend state.
+
