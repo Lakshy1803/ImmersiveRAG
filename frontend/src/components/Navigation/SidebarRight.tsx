@@ -12,7 +12,7 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ extractedContext }) => {
   return (
     <aside className="h-screen w-72 fixed right-0 top-0 pt-16 bg-surface-container flex flex-col border-l border-outline-variant/30 z-40 hidden xl:flex">
       <div className="flex-1 flex flex-col overflow-hidden">
-        
+
         {/* Ingestion Section (Top - Custom Addition to design) */}
         <div className="p-6 border-b border-outline-variant/10">
           <div className="flex items-center justify-between mb-4">
@@ -22,7 +22,7 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ extractedContext }) => {
             </div>
             <span className="material-symbols-outlined text-primary scale-75">cloud_upload</span>
           </div>
-          
+
           <div className="bg-surface-container-low p-4 rounded-2xl border border-outline-variant/30 shadow-sm mb-4">
             <IngestionManager compact={true} />
           </div>
@@ -37,7 +37,7 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ extractedContext }) => {
             </div>
             <span className="material-symbols-outlined text-primary scale-75">barcode_reader</span>
           </div>
-          
+
           <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6 space-y-3">
             {extractedContext.length > 0 ? (
               extractedContext.map((chunk, idx) => (
@@ -50,6 +50,21 @@ const SidebarRight: React.FC<SidebarRightProps> = ({ extractedContext }) => {
                       ID: {chunk.chunk_id?.substring(0, 8)}
                     </span>
                   </div>
+                  {(chunk.metadata?.file_name || chunk.metadata?.page_label) && (
+                    <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                      {chunk.metadata?.file_name && (
+                        <span className="flex items-center gap-1 text-[9px] text-on-surface/50 bg-surface-container px-1.5 py-0.5 rounded font-mono truncate max-w-[150px]">
+                          <span className="material-symbols-outlined text-[9px]">description</span>
+                          {chunk.metadata.file_name}
+                        </span>
+                      )}
+                      {chunk.metadata?.page_label && (
+                        <span className="text-[9px] text-on-surface/40 bg-surface-container px-1.5 py-0.5 rounded">
+                          p.{chunk.metadata.page_label}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <p className="text-[11px] text-on-surface/70 leading-relaxed italic">
                     "{chunk.text.length > 120 ? chunk.text.substring(0, 120) + '...' : chunk.text}"
                   </p>
