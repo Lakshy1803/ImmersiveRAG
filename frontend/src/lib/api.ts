@@ -14,6 +14,12 @@ export interface ChunkNode {
   chunk_id: string;
   document_id: string;
   modality: string;
+  metadata?: {
+    file_name?: string;
+    page_label?: string;
+    heading?: string;
+    [key: string]: string | undefined;
+  };
 }
 
 export interface ContextResponse {
@@ -51,8 +57,8 @@ export const ImmersiveRagAPI = {
     formData.append('file', file);
     formData.append('extraction_mode', config.extraction_mode);
     formData.append('embedding_mode', config.embedding_mode);
-    if(config.collection_id) formData.append('collection_id', config.collection_id);
-    if(config.tenant_id) formData.append('tenant_id', config.tenant_id);
+    if (config.collection_id) formData.append('collection_id', config.collection_id);
+    if (config.tenant_id) formData.append('tenant_id', config.tenant_id);
 
     const response = await fetch('/api/admin/ingest', { method: 'POST', body: formData });
     if (!response.ok) {
@@ -67,8 +73,8 @@ export const ImmersiveRagAPI = {
     files.forEach(file => formData.append('files', file));
     formData.append('extraction_mode', config.extraction_mode);
     formData.append('embedding_mode', config.embedding_mode);
-    if(config.collection_id) formData.append('collection_id', config.collection_id);
-    if(config.tenant_id) formData.append('tenant_id', config.tenant_id);
+    if (config.collection_id) formData.append('collection_id', config.collection_id);
+    if (config.tenant_id) formData.append('tenant_id', config.tenant_id);
 
     const response = await fetch('/api/admin/ingest/bulk', { method: 'POST', body: formData });
     if (!response.ok) {

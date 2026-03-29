@@ -210,6 +210,26 @@ This physically deletes the Qdrant data directory and clears all SQLite state (j
 
 ---
 
+## Local OCR Setup (Tesseract / EasyOCR)
+
+To process PNG images locally without external APIs, you need to configure an OCR engine. 
+ImmersiveRAG supports **Tesseract** and **EasyOCR**.
+
+### Option 1: Tesseract (Recommended for speed)
+1. Download the Tesseract executable for Windows (e.g., from UB-Mannheim).
+2. Install or extract the files.
+3. Place the `tesseract.exe` and its associated files into `backend/local_bin/tesseract/`. *(Note: the `local_bin/` folder is git-ignored securely).*
+4. Ensure your `backend/.env` file contains the explicit path:
+   `IMMERSIVE_RAG_TESSERACT_CMD_PATH=local_bin/tesseract/tesseract.exe`
+5. *(Alternatively, install Tesseract via your corporate software center and set the `.env` path to `C:\Program Files\Tesseract-OCR\tesseract.exe`)*
+
+### Option 2: EasyOCR (Recommended for accuracy)
+1. Open your backend terminal (`cd backend`).
+2. Run `pip install easyocr`
+3. If EasyOCR is detected, it will be used.
+
+---
+
 ## Project Structure
 
 ```

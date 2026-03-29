@@ -1,48 +1,63 @@
 # ImmersiveRAG Backend — Architecture Context
 
 ## Overview
-The ImmersiveRAG backend is a Python FastAPI "Shared Context Service" for LangGraph multi-agent systems. It handles document ingestion (local or cloud extraction), semantic embedding (local FastEmbed or company API), vector storage in Qdrant, and session-scoped sliding window memory for token-efficient retrieval.
+The ImmersiveRAG backend is a **FastAPI** "Shared Context Service" for LangGraph multi-agent systems. It handles document ingestion (local or cloud extraction), semantic embedding (local FastEmbed or company API), vector storage in Qdrant, session-scoped conversation memory, a multi-agent orchestration engine (Master Graph + subgraphs), and an agent registry supporting user-customizable agents.
 
 ## Core Design Constraints
 - **Local-First:** All data (Qdrant vectors, SQLite state) lives on disk — no external cloud calls unless explicitly configured via API keys.
-- **Config-Driven Ingestion:** No manual VPN steps. Users select `extraction_mode` and `embedding_mode` via the frontend UI or API at time of upload.
+- **Config-Driven Ingestion:** Users select `extraction_mode` and `embedding_mode` via the frontend UI or API at time of upload.
 - **Absolute Paths Only:** `config.py` computes all paths via `Path(__file__).parent.parent.parent` to prevent CWD-relative path bugs when Uvicorn is launched from different directories.
 - **Single Qdrant Process:** Local Qdrant (file-based) does not support concurrent clients — always use the singleton via `get_qdrant_client()`.
+- **Runtime LLM Reconfiguration:** LLM API key, base URL, and model can be swapped at runtime via `POST /admin/llm-config` without restarting the server.
 
 ## Directory Structure
 ```text
 backend/
 ├── app/
 │   ├── api/
-│   │   ├── admin_router.py        # /admin/ingest, /admin/ingest/{id}/status, /admin/debug/*
-│   │   ├── agent_router.py        # /agent/query  (main RAG entrypoint for LangGraph)
+│   │   ├── admin_router.py        # /admin/* — ingestion, LLM config, Qdrant stats, debug
+│   │   ├── agent_router.py        # /agent/* — chat, stream, query, agent registry, tools, configure
 │   │   └── dependencies.py        # FastAPI Depends() injectors (config, db)
 │   ├── core/
-│   │   ├── config.py              # AppConfig (BaseSettings) — all paths computed as absolute
-│   │   └── scheduler.py           # APScheduler: poll_ingestion_queue (5s), prune_stale_sessions (5min)
+│   │   ├── config.py              # AppConfig (BaseSettings) — all paths absolute
+│   │   ├── scheduler.py           # APScheduler: poll_ingestion_queue (5s), prune_stale_sessions (5min)
+│   │   └── warnings.py            # Silences 3rd-party Pydantic validation noise on startup
 │   ├── engine/
+│   │   ├── agents/
+│   │   │   ├── state.py           # Shared AgentState TypedDict for Master Graph + subgraphs
+│   │   │   ├── master_graph.py    # Master Orchestrator: dynamic router dispatching to subgraphs
+│   │   │   ├── graph_runner.py    # RAG chat pipeline: 3-node graph (retrieve → generate → logger)
+│   │   │   ├── llm_client.py      # Singleton OpenAI-compatible LLM client (resettable at runtime)
+│   │   │   ├── conversation_memory.py  # 3-tier ConversationMemory (cache + log + rolling summary)
+│   │   │   └── subgraphs/
+│   │   │       ├── document_agent.py   # Conditional parse (PDF/CSV/PNG) → chunk → upsert to Qdrant
+│   │   │       ├── retrieval_agent.py  # build_query → vector_search → rerank_results
+│   │   │       ├── analysis_agent.py   # construct_prompt → run_llm → generate_analysis
+│   │   │       └── report_agent.py     # structure_report (HTML) → generate_pdf (xhtml2pdf)
 │   │   ├── ingestion/
-│   │   │   ├── pipeline.py        # execute_parsing_stage: extraction → chunk → save to SQLite
-│   │   │   ├── parser.py          # run_llamaparse_extraction (cloud_llamaparse mode)
-│   │   │   ├── chunker.py         # chunk_markdown_content: header-split (Markdown) + sentence-window (plain text)
-│   │   │   └── embedder.py        # get_corporate_embeddings: local FastEmbed (384-dim) or company API (1536-dim)
+│   │   │   ├── pipeline.py        # IngestionPipelineManager: create_job + execute_parsing_stage
+│   │   │   ├── parser.py          # run_llamaparse_extraction (cloud) or local OCR fallback
+│   │   │   ├── chunker.py         # chunk_markdown_content: header-split + sentence-window, 800-char/100-overlap
+│   │   │   └── embedder.py        # get_corporate_embeddings: FastEmbed (384-dim) or company API (1536-dim)
 │   │   ├── retrieval/
 │   │   │   └── orchestrator.py    # RetrievalOrchestrator: cache check → Qdrant query → token budget
-│   │   └── memory/
-│   │       └── session_cache.py   # SQLite sliding window cache (per session_id)
+│   │   ├── document_processing/   # OCR parser (Tesseract / EasyOCR) for image/scanned PDF extraction
+│   │   ├── memory/                # Legacy session cache module
+│   │   └── tools/
+│   │       └── export_tools.py    # export_csv (markdown tables) + generate_pdf_from_markdown (xhtml2pdf)
 │   ├── models/
-│   │   ├── api_models.py          # AgentQueryRequest, AgentContextResponse, ContextChunk, IngestStatusResponse
+│   │   ├── api_models.py          # All Pydantic API models (requests + responses, see below)
 │   │   └── domain_models.py       # JobStatus enum, DocumentIngestRequest, IngestionJob
 │   └── storage/
-│       ├── vector_db.py           # get_qdrant_client(), ensure_collection(), COLLECTION_NAME
-│       └── relations_db.py        # get_connection(), init_db(), get_db_session()
+│       ├── vector_db.py           # get_qdrant_client(), ensure_collection(), reset_qdrant_client()
+│       └── relations_db.py        # get_connection(), init_db(), base agent seeding
 ├── data/                          # Runtime data (gitignored)
-│   ├── rag.db                     # SQLite: ingestion_jobs, agent_sessions, session_context_cache
+│   ├── rag.db                     # SQLite: ingestion_jobs, agent_sessions, session_context_cache, agent_definitions, conversation_messages
 │   ├── qdrant/                    # Local Qdrant vector store (on-disk)
 │   └── uploads/                   # Uploaded files saved here before processing
-├── pyproject.toml                 # Declared deps including aiofiles, PyPDF2, fastembed
+├── reports/                       # PDF reports generated by report_agent subgraph
+├── pyproject.toml
 └── .env                           # API keys (gitignored) — see setup.md
-
 ```
 
 ## Key Enum: JobStatus
@@ -50,59 +65,161 @@ backend/
 queued → processing → embedding_and_indexing → complete
                                              ↘ failed
 ```
-- `processing`: Pipeline extracted text and saved chunks to `document_id` column in SQLite
-- `embedding_and_indexing`: APScheduler picked up the job and is generating/upserting vectors
+- `processing`: File uploaded, parsing stage started as BackgroundTask
+- `embedding_and_indexing`: Parsing + chunking done; chunks stored in SQLite awaiting APScheduler embedding
 - `complete`: Vectors upserted to Qdrant successfully
 
 ## Ingestion Data Lifecycle
-1. `POST /admin/ingest` — saves file to `data/uploads/`, creates SQLite job (`PROCESSING`), fires `execute_parsing_stage` as FastAPI BackgroundTask.
+1. `POST /admin/ingest` — saves file to `data/uploads/`, creates SQLite job (`PROCESSING`), fires `IngestionPipelineManager.execute_parsing_stage` as FastAPI BackgroundTask.
 2. `pipeline.execute_parsing_stage` — reads `extraction_mode`:
-   - `local_markdown`: PyPDF2 (PDF) or aiofiles (text) → plain text extraction
-   - `cloud_llamaparse`: LlamaParse API call → Markdown extraction
-   - Result chunked by `chunker.py` (header-split or sentence-window, 800-char chunks, 100-char overlap)
+   - `local_markdown`: PyPDF2 (PDF) or aiofiles (text/other) → plain text extraction
+   - `cloud_llamaparse`: LlamaParse cloud API → Markdown extraction; falls back to local OCR if API key missing
+   - Result chunked by `chunker.py` (header-split on `#`-`####`, sentence-window, 800-char max, 100-char overlap)
    - Chunks JSON-stored in `document_id` column, job updated to `EMBEDDING_AND_INDEXING`
 3. `scheduler.poll_ingestion_queue` — runs every 5s, picks `EMBEDDING_AND_INDEXING` jobs:
-   - Reads `embedding_mode` from `request_data` JSON column
+   - Reads `embedding_mode` from request_data
    - Calls `get_corporate_embeddings(chunks, embedding_mode)` → vectors
-   - Upserts `PointStruct` list to Qdrant `rag_text` collection
+   - Upserts `PointStruct` list to Qdrant `rag_text` collection with metadata (file_name, page_label, heading, chunk_idx)
    - Job marked `COMPLETE`
 
-## Retrieval Data Lifecycle
-1. `POST /agent/query` (`AgentQueryRequest`: `question`, `session_id`, `agent_id`, `top_k`, `max_tokens`)
-2. `RetrievalOrchestrator.retrieve()`:
-   - Checks `EphemeralSessionCache` for exact query hash → returns cached chunks (`cache_hit=true`)
-   - On miss: generates query embedding, calls `qdrant.query_points`, tiktoken-budgets results
-   - Caches result in SQLite session window
-3. Returns `AgentContextResponse` with `extracted_context: List[ContextChunk]` and `total_tokens_used`
+## Two LangGraph Pipelines
+
+### 1. RAG Chat Graph (`graph_runner.py`) — used by `/agent/chat` and `/agent/chat/stream`
+A 3-node StateGraph for per-question RAG + LLM generation:
+```
+START → retrieve → generate → logger → END
+```
+- `retrieve_node`: Uses `RetrievalOrchestrator` to fetch top-5 chunks from Qdrant
+- `generate_node`: Builds system + history + context prompt, calls LLM via OpenAI-compatible client
+- `logger_node`: Observability — logs tokens used, cache hit, answer length (no state mutation)
+
+Both blocking (`run_agent_graph`) and SSE streaming (`stream_agent_graph`) variants exist.
+
+### 2. Master Orchestrator Graph (`master_graph.py`) — used by `/agent/test_master_workflow`
+A dynamic multi-agent workflow graph driven by the `workflow_agents` list in `AgentState`:
+```
+START → router ──(conditional)──► document_subgraph ┐
+                                 ► retrieval_subgraph ├► back to router → ... → END
+                                 ► analysis_subgraph  │
+                                 ► report_subgraph    ┘
+```
+The router reads `workflow_agents[current_step_index]` and dispatches accordingly. Each subgraph increments `current_step_index` on exit. Accepts configurable agent pipelines at request time.
+
+## Subgraph Details
+
+| Subgraph | Nodes | Output |
+|----------|-------|--------|
+| `document_subgraph` | routing → parse_pdf / parse_csv / parse_png → chunk → insert | `document_chunks`, vectors in Qdrant |
+| `retrieval_subgraph` | build_query → vector_search → rerank_results (>30% threshold) | `retrieved_docs` |
+| `analysis_subgraph` | construct_prompt → run_llm → generate_analysis | `analysis_result` |
+| `report_subgraph` | structure_report (HTML) → generate_pdf (xhtml2pdf to disk) | `final_report` (PDF path) |
+
+## Shared Agent State (`state.py`)
+```python
+class AgentState(TypedDict):
+    agent_id: str
+    session_id: str
+    user_query: str
+    uploaded_docs: List[Any]
+    document_chunks: List[dict]
+    retrieved_docs: List[dict]
+    analysis_result: str
+    final_report: str
+    tool_outputs: Dict[str, Any]
+    workflow_agents: List[str]   # e.g. ["document_agent", "retrieval_agent", "analysis_agent"]
+    current_step_index: int       # Master Router uses this pointer
+    status: str
+```
+
+## Agent Registry (SQLite `agent_definitions`)
+- **System agents** (immutable, seeded on startup): `doc_analyzer`, `general_assistant`
+- **User agents** (clones): created via `POST /agent/configure`, deleted via `DELETE /agent/configure/{id}`
+- Each agent stores: `agent_id`, `name`, `description`, `system_prompt`, `icon`, `base_agent_id`, `enabled_tools` (JSON list), `config_json` (model_settings: temperature, max_tokens)
 
 ## API Contract Quick Reference
+
+### Admin & Ingestion (`/admin/*`)
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/admin/ingest` | Upload file (multipart/form-data) |
+| POST | `/admin/ingest` | Upload single file (multipart/form-data) |
+| POST | `/admin/ingest/bulk` | Upload multiple files at once |
 | GET | `/admin/ingest/{job_id}/status` | Poll job status |
-| POST | `/agent/query` | RAG query (JSON body) |
-| GET | `/admin/debug/vectors?limit=N` | Inspect Qdrant (debug) |
-| DELETE | `/admin/debug/purge-vectors` | Wipe all vectors + job history (debug) |
+| GET | `/admin/config/current` | Get current model / embedding config |
+| GET/POST | `/admin/llm-config` | Get or set LLM credentials at runtime |
+| POST | `/admin/llm-config/test` | Test LLM credentials without saving |
+| GET | `/admin/qdrant/stats` | Qdrant collection vector count |
+| GET | `/admin/debug/vectors` | Inspect Qdrant points (debug) |
+| DELETE | `/admin/debug/purge-vectors` | Wipe all vectors + DB state (debug) |
+
+### Agent Services (`/agent/*`)
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/agent/chat` | Full RAG + LLM answer (blocking) |
+| POST | `/agent/chat/stream` | Full RAG + LLM answer (SSE streaming) |
+| POST | `/agent/query` | Legacy: context chunks only, no LLM |
+| GET | `/agent/registry` | List all agents (system + custom) |
+| POST | `/agent/configure` | Create or update a custom agent |
+| DELETE | `/agent/configure/{agent_id}` | Delete custom agent |
+| POST | `/agent/tools/export/csv` | Export markdown table content as CSV |
+| POST | `/agent/tools/export/pdf` | Export markdown answer as PDF |
+| POST | `/agent/test_master_workflow` | Test the dynamic multi-agent orchestrator |
 | GET | `/docs` | Swagger UI |
+| GET | `/health/ready` | Health check |
+
+## API Models Summary
+
+### Chat (Primary)
+```python
+AgentChatRequest:  { question, agent_id="doc_analyzer", session_id="default_session" }
+AgentChatResponse: { answer, context_chunks: List[ContextChunk], tokens_used, cache_hit }
+```
+
+### Legacy Retrieval-Only
+```python
+AgentQueryRequest:    { question, agent_id, session_id, tenant_id, collection_id, top_k, max_tokens }
+AgentContextResponse: { agent_id, session_id, question, extracted_context: List[ContextChunk], total_tokens_used, cache_hit }
+```
+
+### ContextChunk (shared)
+```python
+ContextChunk: { chunk_id, document_id, text, score, modality="text", metadata: {} }
+```
+
+### Agent Config
+```python
+AgentDefinition:    { agent_id, name, description, system_prompt, icon, is_system, base_agent_id, enabled_tools, model_settings }
+AgentConfigRequest: { agent_id?, base_agent_id, name, system_prompt, description, enabled_tools, model_settings }
+```
+
+## Memory Strategy (`conversation_memory.py`)
+- **Tier 1 (Cache):** `session_context_cache` (SQLite) — deduplicates exact query hashes within a session
+- **Tier 2 (Log):** `conversation_messages` (SQLite) — full audit trail; last 4 turns surfaced verbatim in prompt
+- **Tier 3 (Summary):** `agent_sessions.summary_digest` — LLM-compressed summary of older history, refreshed every 4th turn (after 8 messages minimum)
+
+## Storage (`relations_db.py`) — SQLite Tables
+| Table | Purpose |
+|-------|---------|
+| `ingestion_jobs` | job_id, status, request_data, document_id (chunks JSON), error |
+| `agent_sessions` | session_id, agent_id, interaction_count, summary_digest |
+| `session_context_cache` | Query dedup cache keyed by session_id + query_hash |
+| `agent_definitions` | Agent registry (system + custom), with enabled_tools + config_json |
+| `conversation_messages` | Full message log per session (role, content, token_count) |
+
+## Qdrant Collections (`vector_db.py`)
+| Collection | Usage | Dimensions |
+|------------|-------|-----------|
+| `rag_text` | Text chunk embeddings from ingestion | 384 (FastEmbed) or 1536 (OpenAI API) |
+| `rag_image` | Image embeddings (multimodal, Phase 2) | 512 |
 
 ## Environment Variables (`.env`)
 ```env
-IMMERSIVE_RAG_OPENAI_API_KEY=<company-embedding-api-key>
-IMMERSIVE_RAG_OPENAI_BASE_URL=<company-embedding-base-url>
-IMMERSIVE_RAG_EMBEDDING_MODEL=<company-model-name>          # e.g. text-embedding-3-small
-IMMERSIVE_RAG_LLAMA_PARSE_API_KEY=<optional-llamaparse-key>
-IMMERSIVE_RAG_BYPASS_SSL_VERIFY=true                        # Set to true for corporate proxies
+IMMERSIVE_RAG_LLM_API_KEY=<llm-api-key>
+IMMERSIVE_RAG_LLM_BASE_URL=<llm-base-url>           # e.g. corporate proxy
+IMMERSIVE_RAG_LLM_MODEL=gpt-4o                       # default
+IMMERSIVE_RAG_OPENAI_API_KEY=<embedding-api-key>     # if unset → FastEmbed fallback
+IMMERSIVE_RAG_OPENAI_BASE_URL=<embedding-base-url>
+IMMERSIVE_RAG_EMBEDDING_MODEL=text-embedding-3-small
+IMMERSIVE_RAG_LLAMA_PARSE_API_KEY=<optional>         # if unset → local OCR fallback
+IMMERSIVE_RAG_BYPASS_SSL_VERIFY=true                 # for corporate proxies
+IMMERSIVE_RAG_QDRANT_URL=                            # if set → remote Qdrant; else local disk
 ```
-If `IMMERSIVE_RAG_OPENAI_API_KEY` is unset → embedding falls back to local FastEmbed (384-dim).
-If `IMMERSIVE_RAG_LLAMA_PARSE_API_KEY` is unset → cloud_llamaparse extraction will fail; use `local_markdown`.
-
-## LangGraph Orchestration (`graph_runner.py`)
-The system uses a 2-node sync graph:
-1. `retrieve_node`: Uses `RetrievalOrchestrator` to fetch top-5 chunks from Qdrant.
-2. `generate_node`: Builds a prompt with context + history and calls the LLM (Groq/OpenAI).
-Flow: `START` → `retrieve` → `generate` → `END`.
-
-## Memory Strategy
-- **Tier 1 (Short):** `session_context_cache` (SQLite) - avoids re-embedding/re-searching duplicate queries.
-- **Tier 2 (History):** `conversation_messages` (SQLite) - full turn tracking for the agent.
-- **Tier 3 (Summary):** `agent_sessions.summary_digest` - a rolling summary updated every 4 turns to keep long conversations within LLM context limits.

@@ -123,7 +123,6 @@ async def agent_chat_stream(request: AgentChatRequest):
     )
 
 
-
 @router.get("/registry", response_model=List[AgentDefinition])
 async def list_agents():
     """Returns all available agents (base + user-configured)."""
@@ -272,3 +271,42 @@ def _get_agent_definition(agent_id: str) -> dict | None:
             row_dict["model_settings"] = {}
         return row_dict
     return None
+
+
+class TestWorkflowRequest(BaseModel):
+    user_query: str = "What are the key terms in the document?"
+    workflow_agents: list[str] = ["document_agent", "retrieval_agent", "analysis_agent", "report_agent"]
+    agent_id: str = "default_setup"
+    session_id: str = "test_session_1"
+    uploaded_docs: list[dict] = [
+        {"filename": "sample.png", "path": "test.png", "type": "png"}
+    ]
+
+@router.post("/test_master_workflow")
+async def test_master_workflow(request: TestWorkflowRequest):
+    """
+    Test endpoint for running the dynamic Master Orchestrator graph.
+    Pass in a custom 'workflow_agents' list to see routing in action.
+    """
+    from app.engine.agents.master_graph import master_orchestrator
+    
+    # Seed the unified AgentState
+    initial_state = {
+        "user_query": request.user_query,
+        "agent_id": request.agent_id,
+        "session_id": request.session_id,
+        "workflow_agents": request.workflow_agents,
+        "current_step_index": 0,
+        "uploaded_docs": request.uploaded_docs,
+        "document_chunks": [],
+        "retrieved_docs": [],
+        "analysis_result": "",
+        "final_report": "",
+        "tool_outputs": {},
+        "status": "running"
+    }
+    
+    # Execute orchestrator using full async native call
+    result = await master_orchestrator.ainvoke(initial_state)
+    
+    return result
