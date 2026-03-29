@@ -51,6 +51,7 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
       content: 'Good morning, Executive. I am ready to analyze your documents. Upload files via the right panel, then ask me anything.',
     }]);
 
+
     // Fetch active agent definition to get enabled_tools
     ImmersiveRagAPI.listAgents()
       .then(agents => {
@@ -87,7 +88,7 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
     abortRef.current = controller;
 
     try {
-      const baseUrl = getApiBaseUrl();
+      const baseUrl = window.location.hostname === 'localhost' ? 'http://127.0.0.1:8000' : '';
 
       const res = await fetch(`${baseUrl}/agent/chat/stream`, {
         method: 'POST',
@@ -184,8 +185,8 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
 
               {/* Message Bubble */}
               <div className={`p-5 rounded-2xl border border-outline-variant/20 shadow-sm text-sm leading-relaxed ${msg.role === 'user'
-                ? 'bg-surface-container-highest rounded-tr-none text-on-surface'
-                : 'bg-surface-container-low rounded-tl-none text-on-surface'
+                  ? 'bg-surface-container-highest rounded-tr-none text-on-surface'
+                  : 'bg-surface-container-low rounded-tl-none text-on-surface'
                 }`}>
                 {msg.role === 'user' ? (
                   <p>{msg.content}</p>
@@ -219,9 +220,12 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
                       <div className="flex gap-2 mt-4 flex-wrap pt-3 border-t border-outline-variant/10">
                         {activeAgentDef.enabled_tools.includes('export_pdf') && (
                           <button
+                          <button
                             onClick={async () => {
                               setExportingStates(prev => ({ ...prev, [`${msg.id}-pdf`]: true }));
+                              setExportingStates(prev => ({ ...prev, [`${msg.id}-pdf`]: true }));
                               try { await ImmersiveRagAPI.exportToPDF(msg.content); } catch (e) { alert("Failed to export PDF"); }
+                              setExportingStates(prev => ({ ...prev, [`${msg.id}-pdf`]: false }));
                               setExportingStates(prev => ({ ...prev, [`${msg.id}-pdf`]: false }));
                             }}
                             disabled={exportingStates[`${msg.id}-pdf`]}
@@ -232,9 +236,12 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
                         )}
                         {activeAgentDef.enabled_tools.includes('export_csv') && (
                           <button
+                          <button
                             onClick={async () => {
                               setExportingStates(prev => ({ ...prev, [`${msg.id}-csv`]: true }));
+                              setExportingStates(prev => ({ ...prev, [`${msg.id}-csv`]: true }));
                               try { await ImmersiveRagAPI.exportToCSV(msg.content); } catch (e) { alert("Failed to export CSV"); }
+                              setExportingStates(prev => ({ ...prev, [`${msg.id}-csv`]: false }));
                               setExportingStates(prev => ({ ...prev, [`${msg.id}-csv`]: false }));
                             }}
                             disabled={exportingStates[`${msg.id}-csv`]}
@@ -274,6 +281,21 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
                               chunk:{chunk.chunk_id?.substring(0, 10)}
                             </span>
                           </div>
+                          {(chunk.metadata?.file_name || chunk.metadata?.page_label) && (
+                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                              {chunk.metadata?.file_name && (
+                                <span className="flex items-center gap-1 text-[9px] text-on-surface/50 bg-surface-container-high px-2 py-0.5 rounded-full font-mono truncate max-w-[160px]">
+                                  <span className="material-symbols-outlined text-[10px]">description</span>
+                                  {chunk.metadata.file_name}
+                                </span>
+                              )}
+                              {chunk.metadata?.page_label && (
+                                <span className="text-[9px] text-on-surface/40 bg-surface-container-high px-2 py-0.5 rounded-full">
+                                  p.{chunk.metadata.page_label}
+                                </span>
+                              )}
+                            </div>
+                          )}
                           {(chunk.metadata?.file_name || chunk.metadata?.page_label) && (
                             <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                               {chunk.metadata?.file_name && (
