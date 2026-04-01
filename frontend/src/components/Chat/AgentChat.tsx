@@ -220,7 +220,6 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
                       <div className="flex gap-2 mt-4 flex-wrap pt-3 border-t border-outline-variant/10">
                         {activeAgentDef.enabled_tools.includes('export_pdf') && (
                           <button
-                          <button
                             onClick={async () => {
                               setExportingStates(prev => ({ ...prev, [`${msg.id}-pdf`]: true }));
                               setExportingStates(prev => ({ ...prev, [`${msg.id}-pdf`]: true }));
@@ -235,7 +234,6 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
                           </button>
                         )}
                         {activeAgentDef.enabled_tools.includes('export_csv') && (
-                          <button
                           <button
                             onClick={async () => {
                               setExportingStates(prev => ({ ...prev, [`${msg.id}-csv`]: true }));
