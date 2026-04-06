@@ -32,7 +32,6 @@ export default function Home() {
             </span>
             <span className="flex items-center gap-1.5 text-[10px] text-on-surface/20 font-semibold uppercase tracking-[0.15em]">
               <span className="material-symbols-outlined text-[12px]">verified</span>
-              PwC&nbsp;
             </span>
           </div>
         </main>

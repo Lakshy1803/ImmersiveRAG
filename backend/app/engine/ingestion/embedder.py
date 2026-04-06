@@ -9,6 +9,14 @@ logger = logging.getLogger(__name__)
 # Cache the local fastembed model so it doesn't load every time
 _fastembed_model = None
 
+_embedding_client = None
+
+def reset_embedding_client():
+    """Drop cached OpenAI embedding client — next call reinitialises with new config."""
+    global _embedding_client
+    _embedding_client = None
+    logger.info("Embedding client singleton reset.")
+
 def get_corporate_embeddings(texts: List[str], embedding_mode: str = "local_fastembed") -> List[List[float]]:
     """
     Calls the configurable Corporate API for embeddings using the OpenAI client spec.
@@ -29,7 +37,7 @@ def get_corporate_embeddings(texts: List[str], embedding_mode: str = "local_fast
             # Handle SSL verification bypass specifically for the first-time model download
             if config.bypass_ssl_verify:
                 import ssl
-                logger.warning("Bypassing SSL verification for local model download (PwC compliance).")
+                logger.warning("Bypassing SSL verification for local model download.")
                 ssl._create_default_https_context = ssl._create_unverified_context
                 
             from fastembed import TextEmbedding
@@ -40,14 +48,19 @@ def get_corporate_embeddings(texts: List[str], embedding_mode: str = "local_fast
         embeddings_generator = _fastembed_model.embed(texts)
         return [vector.tolist() for vector in embeddings_generator]
 
-    # Otherwise, use the corporate API via the OpenAI client wrapper (STRICT SSL)
+        # Otherwise, use the corporate API via the OpenAI client wrapper
     logger.info(f"Using corporate API (OpenAI client) with model: {model}")
-    client_kwargs = {"api_key": api_key}
-    
-    if base_url:
-        client_kwargs["base_url"] = base_url
 
-    client = OpenAI(**client_kwargs)
+    global _embedding_client
+    if _embedding_client is None:
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        _embedding_client = OpenAI(**client_kwargs)
+    client = _embedding_client
+
+    
+
     
     try:
         response = client.embeddings.create(
@@ -59,3 +72,5 @@ def get_corporate_embeddings(texts: List[str], embedding_mode: str = "local_fast
     except Exception as e:
         logger.error(f"Failed to fetch corporate embeddings via OpenAI client: {e}")
         raise e
+
+

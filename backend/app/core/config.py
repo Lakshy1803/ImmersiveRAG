@@ -38,13 +38,17 @@ class AppConfig(BaseSettings):
     llm_model: str = Field(default="gpt-4o", env="IMMERSIVE_RAG_LLM_MODEL")
 
     # Memory Management
-    max_context_tokens: int = Field(default=4000, description="Max tokens returned to the agent")
+    max_context_tokens: int = Field(default=4000, env="IMMERSIVE_RAG_MAX_CONTEXT_TOKENS", description="Max tokens returned to the agent")
     session_timeout_minutes: int = Field(default=30)
     sliding_window_size: int = Field(default=10, description="Max recent queries kept in session memory")
 
     # Agent Generation Budget
-    llm_max_answer_tokens: int = Field(default=512, description="Max tokens for LLM answer generation")
+    llm_max_answer_tokens: int = Field(default=512, env="IMMERSIVE_RAG_MAX_ANSWER_TOKENS", description="Max tokens for LLM answer generation")
     history_summary_max_tokens: int = Field(default=256, description="Max tokens for rolling conversation summary")
+
+    # Global Model Defaults
+    temperature: float = Field(default=0.3, env="IMMERSIVE_RAG_TEMPERATURE")
+    top_k: int = Field(default=5, env="IMMERSIVE_RAG_TOP_K")
 
     # Security / Networking
     # Set to True to bypass SSL certificate verification (e.g. corporate proxy issues)

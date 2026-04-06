@@ -42,10 +42,14 @@ def retrieve_node(state: AgentState) -> dict:
         session_id=state["session_id"]
     )
 
+    settings = state.get("model_settings", {})
+    top_k = int(settings.get("top_k", 5))
+    max_context = int(settings.get("max_context_tokens", config.max_context_tokens))
+
     chunks, tokens_used, cache_hit = orchestrator.retrieve(
         query=state["question"],
-        top_k=5,
-        max_tokens=config.max_context_tokens
+        top_k=top_k,
+        max_tokens=max_context
     )
 
     return {
@@ -200,10 +204,15 @@ def stream_agent_graph(
         agent_id=agent_id,
         session_id=session_id
     )
+    
+    settings = model_settings or {}
+    top_k = int(settings.get("top_k", 5))
+    max_context = int(settings.get("max_context_tokens", config.max_context_tokens))
+
     chunks, tokens_used, cache_hit = orchestrator.retrieve(
         query=question,
-        top_k=5,
-        max_tokens=config.max_context_tokens
+        top_k=top_k,
+        max_tokens=max_context
     )
     context_chunks = [c.model_dump() for c in chunks]
 
