@@ -15,21 +15,26 @@ The ImmersiveRAG frontend is a Next.js 14 (App Router) application serving as th
 frontend/
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx             # Inter font, dark theme, suppressHydrationWarning on html+body
-│   │   ├── page.tsx               # Main dashboard layout
-│   │   └── globals.css            # Dark theme CSS variables, scrollbar styles
+│   │   ├── layout.tsx               # Inter font, dark theme, suppressHydrationWarning
+│   │   ├── page.tsx                  # Main dashboard layout
+│   │   └── globals.css               # Dark/light theme CSS variables, scrollbar styles
 │   ├── components/
 │   │   ├── Ingestion/
 │   │   │   ├── IngestionManager.tsx  # Parent: owns config state, bridges ConfigPanel ↔ UploadZone
 │   │   │   ├── ConfigPanel.tsx       # extraction_mode + embedding_mode toggle buttons
 │   │   │   └── UploadZone.tsx        # Drag-and-drop upload, polls job status, displays progress
 │   │   ├── Chat/
-│   │   │   └── AgentChat.tsx         # Streaming SSE chat UI: renders context chunks + token-by-token answer
+│   │   │   ├── AgentChat.tsx         # Streaming SSE chat UI + tool action bar
+│   │   │   └── TemplateModal.tsx     # PDF template modal: template picker, PDF upload, style extraction preview
+│   │   ├── Agents/
+│   │   │   └── AgentConfigModal.tsx  # Create/edit agent: base, tools, prompt, model params
+│   │   ├── Settings/
+│   │   │   └── LLMConfigModal.tsx    # Runtime LLM credential configuration
 │   │   └── ui/
 │   │       └── Spinner.tsx           # Reusable animated loading spinner
 │   └── lib/
-│       └── api.ts                 # Typed fetch wrappers — all calls go via Next.js /api/* rewrite proxy
-├── next.config.ts                 # Rewrites: /api/:path* → http://127.0.0.1:8000/:path*
+│       └── api.ts                    # Typed fetch wrappers — all calls via Next.js /api/* proxy
+├── next.config.ts                    # Rewrites: /api/:path* → http://127.0.0.1:8000/:path*
 ├── package.json
 └── tsconfig.json
 ```
@@ -48,15 +53,17 @@ rewrites: [{ source: '/api/:path*', destination: 'http://127.0.0.1:8000/:path*' 
 | `POST /api/admin/ingest/bulk` | UploadZone — bulk file upload |
 | `GET /api/admin/ingest/{job_id}/status` | UploadZone — job status polling |
 | `GET /api/admin/config/current` | ConfigPanel — display current model settings |
-| `GET /api/admin/llm-config` | Model settings display (masked key) |
-| `POST /api/admin/llm-config` | Runtime LLM credential update |
-| `POST /api/admin/llm-config/test` | Test LLM credentials before saving |
+| `GET /api/admin/llm-config` | LLMConfigModal — masked key display |
+| `POST /api/admin/llm-config` | LLMConfigModal — runtime LLM credential update |
+| `POST /api/admin/llm-config/test` | LLMConfigModal — test credentials before saving |
 | `GET /api/agent/registry` | Agent selector — list available agents |
 | `POST /api/agent/chat/stream` | AgentChat — SSE streaming chat |
-| `POST /api/agent/configure` | Create / update custom agent |
-| `DELETE /api/agent/configure/{id}` | Delete custom agent |
-| `POST /api/agent/tools/export/csv` | Export table content as CSV |
-| `POST /api/agent/tools/export/pdf` | Export answer as PDF |
+| `POST /api/agent/configure` | AgentConfigModal — create / update custom agent |
+| `DELETE /api/agent/configure/{id}` | AgentConfigModal — delete custom agent |
+| `POST /api/agent/tools/export/csv` | AgentChat tool bar — export table content as CSV |
+| `POST /api/agent/tools/export/pdf` | AgentChat tool bar — export answer as PDF |
+| `POST /api/agent/tools/generate/template` | TemplateModal — generate branded PDF from template + chat context |
+| `POST /api/agent/tools/templates/extract` | TemplateModal — upload sample PDF to extract brand colors + font + heading skeleton |
 
 ## Primary Chat API Contract (SSE Streaming)
 
