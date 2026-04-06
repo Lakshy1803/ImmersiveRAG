@@ -26,7 +26,8 @@ const AgentConfigModal: React.FC<AgentConfigModalProps> = ({ isOpen, onClose, on
 
   const AVAILABLE_TOOLS = [
     { id: 'export_pdf', label: 'PDF Export' },
-    { id: 'export_csv', label: 'CSV Data Export' }
+    { id: 'export_csv', label: 'CSV Data Export' },
+    { id: 'generate_template', label: 'Generate Document' }
   ];
 
   // Prefill state when modal opens or editAgent changes

@@ -80,3 +80,41 @@ def generate_pdf_from_markdown(markdown_text: str) -> bytes:
         raise Exception("Failed to generate PDF")
         
     return pdf_buffer.getvalue()
+
+def generate_template_pdf(template_markdown: str, filled_content: str) -> bytes:
+    """
+    Takes a template skeleton (markdown) and filled content (markdown),
+    merges them and renders a styled PDF matching the app's brand schema.
+    """
+    html_body = markdown.markdown(filled_content, extensions=['tables', 'fenced_code'])
+    styled_html = f"""<html><head><style>
+        @page {{
+            size: A4;
+            margin: 2cm;
+        }}
+        body     {{ font-family: Helvetica, Arial, sans-serif; font-size: 11pt; line-height: 1.6; color: #1B1C1C; }}
+        h1       {{ font-size: 20pt; font-weight: bold; color: #1B1C1C; border-bottom: 3px solid #EB8C00; padding-bottom: 8px; margin-top: 30px; }}
+        h2       {{ font-size: 16pt; font-weight: bold; color: #EB8C00; border-bottom: 1px solid #E8E8E8; padding-bottom: 4px; margin-top: 24px; }}
+        h3       {{ font-size: 13pt; font-weight: bold; color: #E0301E; margin-top: 18px; }}
+        h4       {{ font-size: 11pt; font-weight: bold; color: #444746; margin-top: 14px; }}
+        p        {{ margin-bottom: 12px; }}
+        ul, ol   {{ margin-bottom: 12px; padding-left: 20px; }}
+        li       {{ margin-bottom: 6px; }}
+        table    {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+        th       {{ background-color: #1B1C1C; color: #FFFFFF; padding: 10px; text-align: left; border: 1px solid #1B1C1C; }}
+        td       {{ border: 1px solid #D1D1D1; padding: 8px; }}
+        tr:nth-child(even) td {{ background-color: #F8F6F3; }}
+        blockquote {{ border-left: 5px solid #EB8C00; padding: 10px 20px; background-color: #FFF8EF; color: #444746; font-style: italic; margin: 15px 0; }}
+        code     {{ font-family: Courier, monospace; background-color: #F2F2F2; padding: 2px 4px; border-radius: 3px; color: #E0301E; }}
+        pre      {{ background-color: #F2F2F2; border-left: 4px solid #EB8C00; padding: 15px; font-family: Courier, monospace; font-size: 10pt; white-space: pre-wrap; margin: 15px 0; }}
+    </style></head><body>
+    {html_body}
+    </body></html>"""
+
+    pdf_buffer = BytesIO()
+    status = pisa.CreatePDF(styled_html, dest=pdf_buffer)
+    if status.err:
+        raise Exception("Template PDF generation failed")
+    return pdf_buffer.getvalue()
+
+

@@ -10,6 +10,10 @@ from fastapi.responses import Response
 class ExportRequest(BaseModel):
     content: str
 
+class TemplateGenerateRequest(BaseModel):
+    template_markdown: str
+    filled_content: str
+
 from app.models.api_models import (
     AgentQueryRequest, AgentContextResponse, ContextChunk,
     AgentChatRequest, AgentChatResponse,
@@ -175,6 +179,20 @@ async def export_pdf(request: ExportRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF Generation failed: {str(e)}")
+
+@router.post("/tools/generate/template")
+async def generate_template(request: TemplateGenerateRequest):
+    """Generates a branded PDF from a template skeleton filled with context content."""
+    from app.engine.tools.export_tools import generate_template_pdf
+    try:
+        pdf_data = generate_template_pdf(request.template_markdown, request.filled_content)
+        return Response(
+            content=pdf_data,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=template_document.pdf"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Template generation failed: {str(e)}")
 
 
 # ── Agent Configuration (Clone + Customize or Update) ─────────────────

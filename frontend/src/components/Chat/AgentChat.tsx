@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChunkNode, ImmersiveRagAPI, AgentDefinition, getApiBaseUrl } from '@/lib/api';
+import { TemplateModal } from './TemplateModal';
 
 interface ChatMessage {
   id: string;
@@ -31,6 +32,7 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
   const [mounted, setMounted] = useState(false);
   const [activeAgentDef, setActiveAgentDef] = useState<AgentDefinition | null>(null);
   const [exportingStates, setExportingStates] = useState<Record<string, boolean>>({});
+  const [templateModalMsg, setTemplateModalMsg] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -185,8 +187,8 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
 
               {/* Message Bubble */}
               <div className={`p-5 rounded-2xl border border-outline-variant/20 shadow-sm text-sm leading-relaxed ${msg.role === 'user'
-                  ? 'bg-surface-container-highest rounded-tr-none text-on-surface'
-                  : 'bg-surface-container-low rounded-tl-none text-on-surface'
+                ? 'bg-surface-container-highest rounded-tr-none text-on-surface'
+                : 'bg-surface-container-low rounded-tl-none text-on-surface'
                 }`}>
                 {msg.role === 'user' ? (
                   <p>{msg.content}</p>
@@ -246,6 +248,14 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
                             className="px-4 py-1.5 rounded-full bg-surface-container-high text-[9px] font-bold uppercase tracking-wider text-on-surface/50 hover:text-white hover:bg-primary border border-transparent transition-all shadow-sm disabled:opacity-50"
                           >
                             {exportingStates[`${msg.id}-csv`] ? 'Exporting...' : 'Export Data (CSV)'}
+                          </button>
+                        )}
+                        {activeAgentDef.enabled_tools.includes('generate_template') && (
+                          <button
+                            onClick={() => setTemplateModalMsg(msg.content)}
+                            className="px-4 py-1.5 rounded-full bg-surface-container-high text-[9px] font-bold uppercase tracking-wider text-on-surface/50 hover:text-white hover:bg-primary border border-transparent transition-all shadow-sm"
+                          >
+                            Generate Document
                           </button>
                         )}
                       </div>
@@ -333,6 +343,14 @@ export function AgentChat({ activeAgentId, onContextUpdate }: AgentChatProps) {
         ))}
         <div ref={endRef} />
       </div>
+
+      {templateModalMsg !== null && (
+        <TemplateModal
+          isOpen={true}
+          onClose={() => setTemplateModalMsg(null)}
+          chatContext={templateModalMsg}
+        />
+      )}
 
       {/* Input Section */}
       <div className="fixed bottom-0 left-64 right-72 px-6 pb-8 pt-4 bg-gradient-to-t from-background via-background/90 to-transparent z-30 transition-colors">
