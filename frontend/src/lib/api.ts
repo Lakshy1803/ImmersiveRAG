@@ -198,6 +198,24 @@ export const ImmersiveRagAPI = {
     window.URL.revokeObjectURL(url);
     a.remove();
   },
+
+  generateTemplatePDF: async (templateMarkdown: string, filledContent: string) => {
+    const res = await fetch(`${baseKey}/agent/tools/generate/template`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template_markdown: templateMarkdown, filled_content: filledContent })
+    });
+    if (!res.ok) throw new Error('Template PDF generation failed');
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `template_doc_${Date.now()}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  },
   // ── LLM Config ─────────────────────────────────────────────────────
   getLLMConfig: async (): Promise<{ api_key_masked: string; base_url: string; model: string; configured: boolean }> => {
     const response = await fetch(`${baseKey}/admin/llm-config`);

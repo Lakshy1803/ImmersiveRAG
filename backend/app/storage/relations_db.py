@@ -28,7 +28,7 @@ _BASE_AGENTS = [
         ),
         "icon": "description",
         "is_system": 1,
-        "enabled_tools": '["export_pdf", "export_csv"]'
+        "enabled_tools": '["export_pdf", "export_csv", "generate_template"]'
     },
     {
         "agent_id": "general_assistant",
