@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
-from typing import List
+from typing import List, Optional
 from uuid import uuid4
 import json
 from pydantic import BaseModel
@@ -9,6 +9,11 @@ from fastapi.responses import Response
 
 class ExportRequest(BaseModel):
     content: str
+
+class TemplateGenerateRequest(BaseModel):
+    template_markdown: str
+    filled_content: str
+    style_config: Optional[dict] = None
 
 from app.models.api_models import (
     AgentQueryRequest, AgentContextResponse, ContextChunk,
@@ -175,6 +180,38 @@ async def export_pdf(request: ExportRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF Generation failed: {str(e)}")
+
+@router.post("/tools/generate/template")
+async def generate_template(request: TemplateGenerateRequest):
+    """Generates a branded PDF from a template skeleton filled with context content."""
+    from app.engine.tools.export_tools import generate_template_pdf
+    try:
+        pdf_data = generate_template_pdf(
+            request.template_markdown,
+            request.filled_content,
+            style_config=request.style_config
+        )
+        return Response(
+            content=pdf_data,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=template_document.pdf"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Template generation failed: {str(e)}")
+
+
+@router.post("/tools/templates/extract")
+async def extract_template_style(file: UploadFile = File(...)):
+    """Upload a sample PDF to extract its brand color schema and font family."""
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+    try:
+        from app.engine.tools.template_extractor import extract_style_from_pdf
+        pdf_bytes = await file.read()
+        style = await run_in_threadpool(extract_style_from_pdf, pdf_bytes)
+        return style
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Style extraction failed: {str(e)}")
 
 
 # ── Agent Configuration (Clone + Customize or Update) ─────────────────

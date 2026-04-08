@@ -198,6 +198,40 @@ export const ImmersiveRagAPI = {
     window.URL.revokeObjectURL(url);
     a.remove();
   },
+
+  generateTemplatePDF: async (templateMarkdown: string, filledContent: string, styleConfig?: Record<string, string>) => {
+    const res = await fetch(`${baseKey}/agent/tools/generate/template`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        template_markdown: templateMarkdown,
+        filled_content: filledContent,
+        style_config: styleConfig ?? null
+      })
+    });
+    if (!res.ok) throw new Error('Template PDF generation failed');
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `template_doc_${Date.now()}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+  },
+
+  extractTemplateStyle: async (file: File): Promise<{ primary_color: string; secondary_color: string; font_family: string; markdown_skeleton?: string }> => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${baseKey}/agent/tools/templates/extract`, {
+      method: 'POST',
+      body: form
+    });
+    if (!res.ok) throw new Error('Style extraction failed');
+    return res.json();
+  },
+
   // ── LLM Config ─────────────────────────────────────────────────────
   getLLMConfig: async (): Promise<{ api_key_masked: string; base_url: string; model: string; configured: boolean }> => {
     const response = await fetch(`${baseKey}/admin/llm-config`);

@@ -80,3 +80,65 @@ def generate_pdf_from_markdown(markdown_text: str) -> bytes:
         raise Exception("Failed to generate PDF")
         
     return pdf_buffer.getvalue()
+
+def generate_template_pdf(
+    template_markdown: str,
+    filled_content: str,
+    style_config: dict | None = None
+) -> bytes:
+    """
+    Takes a template skeleton (markdown) and filled content (markdown),
+    merges them and renders a styled PDF.
+    style_config may contain: primary_color, secondary_color, font_family
+    Falls back to ImmersiveRAG brand defaults if not provided.
+    """
+    sc = style_config or {}
+    primary   = sc.get("primary_color",   "#EB8C00")
+    secondary = sc.get("secondary_color", "#E0301E")
+    font      = sc.get("font_family",     "Helvetica, Arial, sans-serif")
+
+    # Derive a light tint of primary for alternating table rows
+    def _lighten(hex_col: str, mix: int = 240) -> str:
+        r = int(hex_col[1:3], 16)
+        g = int(hex_col[3:5], 16)
+        b = int(hex_col[5:7], 16)
+        # blend towards white
+        r2 = (r + mix * 2) // 3
+        g2 = (g + mix * 2) // 3
+        b2 = (b + mix * 2) // 3
+        return f"#{r2:02x}{g2:02x}{b2:02x}"
+
+    tint = _lighten(primary)
+
+    html_body = markdown.markdown(filled_content, extensions=['tables', 'fenced_code'])
+    styled_html = f"""<html><head><style>
+        @page {{
+            size: A4;
+            margin: 2cm;
+        }}
+        body       {{ font-family: {font}; font-size: 11pt; line-height: 1.6; color: #1B1C1C; }}
+        h1         {{ font-size: 20pt; font-weight: bold; color: #1B1C1C; border-bottom: 3px solid {primary}; padding-bottom: 8px; margin-top: 30px; }}
+        h2         {{ font-size: 16pt; font-weight: bold; color: {primary}; border-bottom: 1px solid #E8E8E8; padding-bottom: 4px; margin-top: 24px; }}
+        h3         {{ font-size: 13pt; font-weight: bold; color: {secondary}; margin-top: 18px; }}
+        h4         {{ font-size: 11pt; font-weight: bold; color: #444746; margin-top: 14px; }}
+        p          {{ margin-bottom: 12px; }}
+        ul, ol     {{ margin-bottom: 12px; padding-left: 20px; }}
+        li         {{ margin-bottom: 6px; }}
+        table      {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+        th         {{ background-color: #1B1C1C; color: #FFFFFF; padding: 10px; text-align: left; border: 1px solid #1B1C1C; }}
+        td         {{ border: 1px solid #D1D1D1; padding: 8px; }}
+        tr:nth-child(even) td {{ background-color: {tint}; }}
+        blockquote {{ border-left: 5px solid {primary}; padding: 10px 20px; background-color: {tint}; color: #444746; font-style: italic; margin: 15px 0; }}
+        code       {{ font-family: Courier, monospace; background-color: #F2F2F2; padding: 2px 4px; border-radius: 3px; color: {secondary}; }}
+        pre        {{ background-color: #F2F2F2; border-left: 4px solid {primary}; padding: 15px; font-family: Courier, monospace; font-size: 10pt; white-space: pre-wrap; margin: 15px 0; }}
+    </style></head><body>
+    {html_body}
+    </body></html>"""
+
+    pdf_buffer = BytesIO()
+    status = pisa.CreatePDF(styled_html, dest=pdf_buffer)
+    if status.err:
+        raise Exception("Template PDF generation failed")
+    return pdf_buffer.getvalue()
+
+

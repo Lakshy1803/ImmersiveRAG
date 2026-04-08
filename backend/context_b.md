@@ -44,7 +44,8 @@ backend/
 │   │   ├── document_processing/   # OCR parser (Tesseract / EasyOCR) for image/scanned PDF extraction
 │   │   ├── memory/                # Legacy session cache module
 │   │   └── tools/
-│   │       └── export_tools.py    # export_csv (markdown tables) + generate_pdf_from_markdown (xhtml2pdf)
+│   │       ├── export_tools.py       # extract_tables_to_csv + generate_pdf_from_markdown + generate_template_pdf (dynamic CSS)
+│   │       └── template_extractor.py # extract_style_from_pdf: PyMuPDF color/font analysis + markdown_skeleton extraction
 │   ├── models/
 │   │   ├── api_models.py          # All Pydantic API models (requests + responses, see below)
 │   │   └── domain_models.py       # JobStatus enum, DocumentIngestRequest, IngestionJob
@@ -134,7 +135,9 @@ class AgentState(TypedDict):
 ## Agent Registry (SQLite `agent_definitions`)
 - **System agents** (immutable, seeded on startup): `doc_analyzer`, `general_assistant`
 - **User agents** (clones): created via `POST /agent/configure`, deleted via `DELETE /agent/configure/{id}`
-- Each agent stores: `agent_id`, `name`, `description`, `system_prompt`, `icon`, `base_agent_id`, `enabled_tools` (JSON list), `config_json` (model_settings: temperature, max_tokens)
+- Each agent stores: `agent_id`, `name`, `description`, `system_prompt`, `icon`, `base_agent_id`, `enabled_tools` (JSON list), `config_json` (model_settings: temperature, max_tokens, max_context_tokens, top_k)
+- Default `doc_analyzer` enabled_tools: `["export_pdf", "export_csv", "generate_template"]`
+- Default `general_assistant` enabled_tools: `[]`
 
 ## API Contract Quick Reference
 
@@ -162,6 +165,8 @@ class AgentState(TypedDict):
 | DELETE | `/agent/configure/{agent_id}` | Delete custom agent |
 | POST | `/agent/tools/export/csv` | Export markdown table content as CSV |
 | POST | `/agent/tools/export/pdf` | Export markdown answer as PDF |
+| POST | `/agent/tools/generate/template` | Generate branded PDF from template skeleton + content |
+| POST | `/agent/tools/templates/extract` | Upload sample PDF → extract brand colors + font + heading skeleton |
 | POST | `/agent/test_master_workflow` | Test the dynamic multi-agent orchestrator |
 | GET | `/docs` | Swagger UI |
 | GET | `/health/ready` | Health check |
@@ -183,6 +188,15 @@ AgentContextResponse: { agent_id, session_id, question, extracted_context: List[
 ### ContextChunk (shared)
 ```python
 ContextChunk: { chunk_id, document_id, text, score, modality="text", metadata: {} }
+```
+
+### Tool Endpoints
+```python
+ExportRequest:             { content: str }
+TemplateGenerateRequest:   { template_markdown: str, filled_content: str, style_config?: dict }
+# style_config keys: primary_color, secondary_color, font_family
+# POST /agent/tools/templates/extract accepts multipart UploadFile, returns:
+# { primary_color, secondary_color, font_family, markdown_skeleton }
 ```
 
 ### Agent Config

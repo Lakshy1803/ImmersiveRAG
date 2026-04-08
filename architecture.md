@@ -126,10 +126,10 @@ Mode: embedded local disk storage (file-locked singleton). Remote Qdrant support
 ## 5. Agent Registry
 
 System stores two base (immutable) agents seeded on startup:
-- **`doc_analyzer`** — strict document-only analyst; tools: `export_pdf`, `export_csv`
+- **`doc_analyzer`** — strict document-only analyst; default tools: `export_pdf`, `export_csv`, `generate_template`
 - **`general_assistant`** — helpful corporate assistant; tools: `export_pdf`
 
-Users can clone any base agent to create custom agents with overridden system prompts, `enabled_tools`, and `model_settings` (temperature, max_tokens). Custom agents are stored in `agent_definitions` and surfaced via `GET /agent/registry`.
+Users can clone any base agent to create custom agents with overridden system prompts, `enabled_tools`, and `model_settings` (temperature, max_tokens, max_context_tokens, top_k). Custom agents are stored in `agent_definitions` and surfaced via `GET /agent/registry`.
 
 LLM credentials can be updated at runtime via `POST /admin/llm-config` (no server restart required). The LLM client is a resettable singleton in `llm_client.py`.
 
@@ -149,8 +149,10 @@ LLM credentials can be updated at runtime via `POST /admin/llm-config` (no serve
 
 | Tool | Endpoint | Implementation |
 |------|----------|---------------|
-| CSV Export | `POST /agent/tools/export/csv` | Parses markdown tables → CSV string |
+| CSV Export | `POST /agent/tools/export/csv` | Parses markdown tables → CSV string (`extract_tables_to_csv`) |
 | PDF Export | `POST /agent/tools/export/pdf` | Markdown → HTML → xhtml2pdf → PDF bytes |
+| Template Generation | `POST /agent/tools/generate/template` | Generates a fully styled PDF from a markdown template skeleton + filled content. Accepts optional `style_config` (primary/secondary color, font) for dynamic CSS. Defaults to ImmersiveRAG brand colors. |
+| Style Extraction | `POST /agent/tools/templates/extract` | Accepts a PDF `UploadFile`. Uses PyMuPDF to extract dominant brand colors, font family, and heading structure as a `markdown_skeleton`. Used by the Custom template workflow in `TemplateModal`. |
 
 ---
 
@@ -180,7 +182,7 @@ IMMERSIVE_RAG_QDRANT_URL=            # Remote Qdrant (unset → local disk)
 | Static multi-agent workflows | ✅ Implemented (Master Orchestrator + 4 subgraphs) |
 | Asynchronous execution | ✅ Implemented (BackgroundTasks + APScheduler) |
 | Job tracking | ✅ Implemented (SQLite state machine) |
-| Tool execution service | ✅ Implemented (export_tools: CSV + PDF) |
+| Tool execution service | ✅ Implemented (export_tools: CSV + PDF + Template Generation + Style Extraction) |
 | Structured output (PDF reports) | ✅ Implemented (report_agent subgraph) |
 | Parallel execution | ❌ Phase 2 |
 | Observability dashboards | ❌ Phase 2 |
