@@ -118,7 +118,18 @@ User query: {question}"""
         if start != -1 and end != -1 and end > start:
             raw = raw[start:end + 1]
 
-        result = json.loads(raw)
+        # Layer 4: replace Python literals that are invalid JSON
+        # Corporate/older LLMs often output None, True, False instead of null, true, false
+        raw = re.sub(r'\bNone\b', 'null', raw)
+        raw = re.sub(r'\bTrue\b', 'true', raw)
+        raw = re.sub(r'\bFalse\b', 'false', raw)
+
+        # Layer 5: try json.loads, fall back to ast.literal_eval for single-quoted dicts
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError:
+            import ast
+            result = ast.literal_eval(raw)
 
         # Safety: fill in missing agents
         for step in result.get("steps", []):
