@@ -102,7 +102,16 @@ User query: {question}"""
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
-        result = json.loads(raw.strip())
+        raw = raw.strip()
+
+        # Sanitize literal control chars inside JSON string values.
+        # The LLM sometimes emits actual \n/\t/\r inside string fields,
+        # which is invalid JSON — collapse them to a single space.
+        import re
+        raw = re.sub(r'[\r\n\t]', ' ', raw)
+        raw = re.sub(r'  +', ' ', raw)
+
+        result = json.loads(raw)
 
         # Safety: fill in missing agents
         for step in result.get("steps", []):
