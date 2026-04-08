@@ -41,6 +41,9 @@ export interface AgentDefinition {
   base_agent_id: string | null;
   enabled_tools: string[];
   model_settings?: Record<string, any>;
+  kind: 'standard' | 'master';
+  is_published: boolean;
+  sub_agents?: { agent_id: string; name: string; icon: string }[];
 }
 
 export interface AgentChatResponse {
@@ -148,6 +151,43 @@ export const ImmersiveRagAPI = {
       throw new Error(e.detail || `Delete agent failed: ${response.statusText}`);
     }
   },
+
+  configureMasterAgent: async (request: {
+    agent_id?: string;
+    name: string;
+    description?: string;
+    sub_agent_ids: string[];
+    is_published?: boolean;
+  }): Promise<AgentDefinition> => {
+    const response = await fetch(`${baseKey}/agent/configure/master`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      const e = await response.json().catch(() => ({}));
+      throw new Error(e.detail || `Master agent configure failed: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  publishMasterAgent: async (agentId: string): Promise<AgentDefinition> => {
+    const response = await fetch(`${baseKey}/agent/configure/master/${agentId}/publish`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const e = await response.json().catch(() => ({}));
+      throw new Error(e.detail || `Publish failed: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  getPublishedWorkflows: async (): Promise<AgentDefinition[]> => {
+    const response = await fetch(`${baseKey}/agent/published`);
+    if (!response.ok) throw new Error('Failed to fetch published workflows');
+    return response.json();
+  },
+
 
   // ── Admin & Stats ──────────────────────────────────────────────────
   getAdminConfig: async () => {

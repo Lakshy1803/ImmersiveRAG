@@ -60,6 +60,9 @@ class AgentDefinition(BaseModel):
     base_agent_id: Optional[str] = None
     enabled_tools: List[str] = Field(default_factory=list)
     model_settings: dict = Field(default_factory=dict)
+    kind: str = "standard"          # "standard" | "master"
+    is_published: bool = False
+    sub_agents: List[dict] = Field(default_factory=list)  # populated for master agents
 
 class AgentConfigRequest(BaseModel):
     agent_id: Optional[str] = None
@@ -69,4 +72,12 @@ class AgentConfigRequest(BaseModel):
     description: str = ""
     enabled_tools: List[str] = Field(default_factory=list)
     model_settings: dict = Field(default_factory=dict)
+
+
+class MasterAgentConfigRequest(BaseModel):
+    agent_id: Optional[str] = None     # None = create, existing ID = update
+    name: str
+    description: str = ""
+    sub_agent_ids: List[str] = Field(default_factory=list)
+    is_published: bool = False
 

@@ -18,7 +18,7 @@ class TemplateGenerateRequest(BaseModel):
 from app.models.api_models import (
     AgentQueryRequest, AgentContextResponse, ContextChunk,
     AgentChatRequest, AgentChatResponse,
-    AgentDefinition, AgentConfigRequest,
+    AgentDefinition, AgentConfigRequest, MasterAgentConfigRequest,
 )
 from app.storage.relations_db import get_connection
 
@@ -107,6 +107,31 @@ async def agent_chat_stream(request: AgentChatRequest):
     if not agent_def:
         raise HTTPException(status_code=404, detail=f"Agent '{request.agent_id}' not found.")
 
+    # Master Agent → intent-routing orchestrator graph
+    if agent_def.get("kind") == "master":
+        from app.engine.agents.master_router_graph import stream_master_router_graph
+
+        # Resolve sub-agents
+        sub_agent_ids = agent_def.get("enabled_tools", [])  # repurposed field
+        sub_agents = [_get_agent_definition(aid) for aid in sub_agent_ids]
+        sub_agents = [a for a in sub_agents if a]  # filter None
+
+        def generate_master():
+            yield from stream_master_router_graph(
+                question=request.question,
+                agent_id=request.agent_id,
+                session_id=request.session_id,
+                sub_agents=sub_agents,
+                model_settings=agent_def.get("model_settings", {}),
+            )
+
+        return StreamingResponse(
+            generate_master(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    # Standard Agent → regular RAG graph
     from app.engine.agents.graph_runner import stream_agent_graph
 
     def generate():
@@ -121,10 +146,7 @@ async def agent_chat_stream(request: AgentChatRequest):
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # Disable Nginx buffering for SSE
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
@@ -134,7 +156,8 @@ async def list_agents():
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT agent_id, name, description, system_prompt, icon, is_system, base_agent_id, enabled_tools, config_json "
+            "SELECT agent_id, name, description, system_prompt, icon, is_system, base_agent_id, "
+            "enabled_tools, config_json, kind, is_published "
             "FROM agent_definitions ORDER BY is_system DESC, name ASC"
         )
         rows = cursor.fetchall()
@@ -149,7 +172,9 @@ async def list_agents():
             is_system=bool(row["is_system"]),
             base_agent_id=row["base_agent_id"],
             enabled_tools=json.loads(row["enabled_tools"]) if row["enabled_tools"] else [],
-            model_settings=json.loads(row["config_json"]) if row.keys() and "config_json" in row.keys() and row["config_json"] else {},
+            model_settings=json.loads(row["config_json"]) if row["config_json"] else {},
+            kind=row["kind"] or "standard",
+            is_published=bool(row["is_published"]),
         )
         for row in rows
     ]
@@ -212,6 +237,141 @@ async def extract_template_style(file: UploadFile = File(...)):
         return style
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Style extraction failed: {str(e)}")
+
+
+# ── Master Agent Configuration ─────────────────────────────────────────
+@router.post("/configure/master", response_model=AgentDefinition)
+async def configure_master_agent(request: MasterAgentConfigRequest):
+    """Create or update a Master Orchestrator agent with a list of sub-agent IDs."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if request.agent_id:
+            existing = _get_agent_definition(request.agent_id)
+            if not existing:
+                raise HTTPException(status_code=404, detail=f"Agent '{request.agent_id}' not found.")
+            if existing.get("is_system"):
+                raise HTTPException(status_code=403, detail="Cannot edit system agents.")
+            cursor.execute('''
+                UPDATE agent_definitions
+                SET name=?, description=?, enabled_tools=?, is_published=?
+                WHERE agent_id=?
+            ''', (
+                request.name, request.description,
+                json.dumps(request.sub_agent_ids),
+                int(request.is_published),
+                request.agent_id
+            ))
+            agent_id_to_return = request.agent_id
+        else:
+            agent_id_to_return = f"master_{uuid4().hex[:12]}"
+            cursor.execute('''
+                INSERT INTO agent_definitions
+                  (agent_id, name, description, system_prompt, base_agent_id, icon, is_system, enabled_tools, config_json, kind, is_published)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 'master', ?)
+            ''', (
+                agent_id_to_return, request.name, request.description,
+                "You are a Master Orchestrator that intelligently delegates user requests across your configured agent army.",
+                "master_orchestrator", "hub",
+                json.dumps(request.sub_agent_ids), "{}",
+                int(request.is_published)
+            ))
+        conn.commit()
+
+    row = _get_agent_definition(agent_id_to_return)
+    # Populate sub_agents details
+    sub_agents_detail = [
+        {"agent_id": a["agent_id"], "name": a["name"], "icon": a["icon"]}
+        for sid in request.sub_agent_ids
+        if (a := _get_agent_definition(sid))
+    ]
+    return AgentDefinition(
+        agent_id=agent_id_to_return,
+        name=request.name,
+        description=request.description,
+        system_prompt=row["system_prompt"],
+        icon="hub",
+        is_system=False,
+        base_agent_id="master_orchestrator",
+        enabled_tools=request.sub_agent_ids,
+        model_settings={},
+        kind="master",
+        is_published=request.is_published,
+        sub_agents=sub_agents_detail,
+    )
+
+
+@router.post("/configure/master/{agent_id}/publish", response_model=AgentDefinition)
+async def publish_master_agent(agent_id: str):
+    """Toggle a Master Agent to published state so the team can discover and use it."""
+    agent = _get_agent_definition(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found.")
+    if agent.get("kind") != "master":
+        raise HTTPException(status_code=400, detail="Only Master Agents can be published.")
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE agent_definitions SET is_published=1 WHERE agent_id=?", (agent_id,))
+        conn.commit()
+
+    row = _get_agent_definition(agent_id)
+    sub_agent_ids = row.get("enabled_tools", [])
+    sub_agents_detail = [
+        {"agent_id": a["agent_id"], "name": a["name"], "icon": a["icon"]}
+        for sid in sub_agent_ids
+        if (a := _get_agent_definition(sid))
+    ]
+    return AgentDefinition(
+        agent_id=agent_id,
+        name=row["name"],
+        description=row["description"],
+        system_prompt=row["system_prompt"],
+        icon="hub",
+        is_system=False,
+        base_agent_id="master_orchestrator",
+        enabled_tools=sub_agent_ids,
+        model_settings=row.get("model_settings", {}),
+        kind="master",
+        is_published=True,
+        sub_agents=sub_agents_detail,
+    )
+
+
+@router.get("/published", response_model=List[AgentDefinition])
+async def list_published_workflows():
+    """Returns all published Master Agents (team-discoverable workflows)."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT agent_id, name, description, system_prompt, icon, is_system, "
+            "base_agent_id, enabled_tools, config_json, kind, is_published "
+            "FROM agent_definitions WHERE kind='master' AND is_published=1 ORDER BY name ASC"
+        )
+        rows = cursor.fetchall()
+
+    result = []
+    for row in rows:
+        sub_agent_ids = json.loads(row["enabled_tools"]) if row["enabled_tools"] else []
+        sub_agents_detail = [
+            {"agent_id": a["agent_id"], "name": a["name"], "icon": a["icon"]}
+            for sid in sub_agent_ids
+            if (a := _get_agent_definition(sid))
+        ]
+        result.append(AgentDefinition(
+            agent_id=row["agent_id"],
+            name=row["name"],
+            description=row["description"],
+            system_prompt=row["system_prompt"],
+            icon="hub",
+            is_system=bool(row["is_system"]),
+            base_agent_id=row["base_agent_id"],
+            enabled_tools=sub_agent_ids,
+            model_settings=json.loads(row["config_json"]) if row["config_json"] else {},
+            kind="master",
+            is_published=True,
+            sub_agents=sub_agents_detail,
+        ))
+    return result
 
 
 # ── Agent Configuration (Clone + Customize or Update) ─────────────────
@@ -293,7 +453,8 @@ def _get_agent_definition(agent_id: str) -> dict | None:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT agent_id, name, description, system_prompt, icon, is_system, base_agent_id, enabled_tools, config_json "
+            "SELECT agent_id, name, description, system_prompt, icon, is_system, base_agent_id, "
+            "enabled_tools, config_json, kind, is_published "
             "FROM agent_definitions WHERE agent_id = ?",
             (agent_id,)
         )
@@ -306,6 +467,8 @@ def _get_agent_definition(agent_id: str) -> dict | None:
             row_dict["model_settings"] = json.loads(row_dict["config_json"])
         else:
             row_dict["model_settings"] = {}
+        row_dict["kind"] = row_dict.get("kind") or "standard"
+        row_dict["is_published"] = bool(row_dict.get("is_published", 0))
         return row_dict
     return None
 

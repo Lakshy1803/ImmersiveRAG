@@ -42,7 +42,23 @@ _BASE_AGENTS = [
         ),
         "icon": "smart_toy",
         "is_system": 1,
-        "enabled_tools": '["export_pdf"]'
+        "enabled_tools": '["export_pdf"]',
+        "kind": "standard",
+    },
+    {
+        "agent_id": "master_orchestrator",
+        "name": "Master Orchestrator",
+        "description": "Intelligent orchestrator that routes your query across your configured agent army and calls the right tools automatically.",
+        "system_prompt": (
+            "You are a Master Orchestrator. Your role is to understand the user's intent and "
+            "delegate each part of their request to the most appropriate specialist agent or tool. "
+            "Be transparent about which agent you are routing to. "
+            "If the request is ambiguous, ask one concise clarifying question before proceeding."
+        ),
+        "icon": "hub",
+        "is_system": 1,
+        "enabled_tools": '[]',
+        "kind": "master",
     },
 ]
 
@@ -119,6 +135,20 @@ def init_db():
         except:
             pass
 
+        # Migration: add kind column (standard | master)
+        try:
+            cursor.execute("ALTER TABLE agent_definitions ADD COLUMN kind TEXT DEFAULT 'standard'")
+            conn.commit()
+        except:
+            pass
+
+        # Migration: add is_published column
+        try:
+            cursor.execute("ALTER TABLE agent_definitions ADD COLUMN is_published BOOLEAN DEFAULT 0")
+            conn.commit()
+        except:
+            pass
+
 
         # Conversation Message Log — for history + summary generation
         cursor.execute('''
@@ -137,12 +167,13 @@ def init_db():
         # Seed base agents (upsert — doesn't overwrite user edits if they exist)
         for agent in _BASE_AGENTS:
             cursor.execute('''
-                INSERT INTO agent_definitions (agent_id, name, description, system_prompt, icon, is_system, enabled_tools)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO agent_definitions (agent_id, name, description, system_prompt, icon, is_system, enabled_tools, kind)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(agent_id) DO NOTHING
             ''', (
                 agent["agent_id"], agent["name"], agent["description"],
-                agent["system_prompt"], agent["icon"], agent["is_system"], agent.get("enabled_tools", '[]')
+                agent["system_prompt"], agent["icon"], agent["is_system"],
+                agent.get("enabled_tools", '[]'), agent.get("kind", "standard")
             ))
         
         conn.commit()

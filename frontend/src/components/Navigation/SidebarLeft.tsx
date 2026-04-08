@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { ImmersiveRagAPI, AgentDefinition } from "@/lib/api";
 import AgentConfigModal from "@/components/Agents/AgentConfigModal";
+import MasterConfigModal from "@/components/Agents/MasterConfigModal";
 
 interface SidebarLeftProps {
   activeAgentId: string;
@@ -15,6 +16,8 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [editAgent, setEditAgent] = useState<AgentDefinition | null>(null);
+  const [masterModalOpen, setMasterModalOpen] = useState(false);
+  const [masterEditAgent, setMasterEditAgent] = useState<AgentDefinition | null>(null);
 
   // Stats and Config States
   const [config, setConfig] = useState<any>(null);
@@ -30,7 +33,7 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
       setActiveAgent(current);
     } catch {
       // Backend may not be ready — use a placeholder
-      setActiveAgent({ agent_id: activeAgentId, name: "Document Analyzer", description: "", system_prompt: "", icon: "description", is_system: true, base_agent_id: null, enabled_tools: [] });
+      setActiveAgent({ agent_id: activeAgentId, name: "Document Analyzer", description: "", system_prompt: "", icon: "description", is_system: true, base_agent_id: null, enabled_tools: [], kind: "standard", is_published: false });
     }
   };
 
@@ -53,7 +56,8 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
   };
 
   const baseAgents = agents.filter(a => a.is_system);
-  const customAgents = agents.filter(a => !a.is_system);
+  const customStandardAgents = agents.filter(a => !a.is_system && a.kind === 'standard');
+  const masterAgents = agents.filter(a => !a.is_system && a.kind === 'master');
 
   return (
     <>
@@ -98,10 +102,10 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
                   </div>
                 )}
 
-                {customAgents.length > 0 && (
+                {customStandardAgents.length > 0 && (
                   <div className="border-t border-outline-variant/20">
                     <p className="text-[9px] uppercase tracking-widest text-on-surface/40 font-bold px-4 pt-3 pb-1">My Agents</p>
-                    {customAgents.map(agent => (
+                    {customStandardAgents.map(agent => (
                       <button key={agent.agent_id} onClick={() => handleSelectAgent(agent)}
                         className={`w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-primary/10 transition-all text-left ${activeAgentId === agent.agent_id ? "border-l-2 border-primary bg-primary/5" : ""}`}>
                         <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -122,6 +126,37 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
                   </div>
                 )}
 
+                {/* Master Workflows */}
+                {masterAgents.length > 0 && (
+                  <div className="border-t border-outline-variant/20">
+                    <p className="text-[9px] uppercase tracking-widest text-on-surface/40 font-bold px-4 pt-3 pb-1">Workflows</p>
+                    {masterAgents.map(agent => (
+                      <button key={agent.agent_id} onClick={() => handleSelectAgent(agent)}
+                        className={`w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-primary/10 transition-all text-left ${activeAgentId === agent.agent_id ? "border-l-2 border-primary bg-primary/5" : ""}`}>
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="material-symbols-outlined text-primary text-sm flex-shrink-0">hub</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="text-on-surface font-semibold text-xs truncate">{agent.name}</p>
+                              {agent.is_published
+                                ? <span className="text-[8px] bg-green-500/15 text-green-600 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide flex-shrink-0">Published</span>
+                                : <span className="text-[8px] bg-on-surface/10 text-on-surface/40 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide flex-shrink-0">Draft</span>
+                              }
+                            </div>
+                            <p className="text-on-surface/40 text-[10px] truncate">{agent.description || 'Orchestrator'}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span onClick={(e) => { e.stopPropagation(); setMasterEditAgent(agent); setMasterModalOpen(true); setSelectorOpen(false); }}
+                            className="material-symbols-outlined text-sm text-on-surface/30 hover:text-primary transition-colors flex-shrink-0">edit</span>
+                          <span onClick={(e) => handleDeleteAgent(agent.agent_id, e)}
+                            className="material-symbols-outlined text-sm text-on-surface/30 hover:text-red-500 transition-colors flex-shrink-0">delete</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* Configure New Agent */}
                 <div className="border-t border-outline-variant/20 p-2">
                   <button
@@ -130,6 +165,13 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
                   >
                     <span className="material-symbols-outlined text-sm">add_circle</span>
                     Configure New Agent
+                  </button>
+                  <button
+                    onClick={() => { setMasterEditAgent(null); setSelectorOpen(false); setMasterModalOpen(true); }}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-on-surface/60 hover:text-primary hover:bg-primary/10 rounded-xl transition-all text-xs font-bold"
+                  >
+                    <span className="material-symbols-outlined text-sm">hub</span>
+                    Create Agent Workflow
                   </button>
                 </div>
               </div>
@@ -278,6 +320,20 @@ const SidebarLeft: React.FC<SidebarLeftProps> = ({ activeAgentId, onAgentChange 
           setEditAgent(null);
         }}
         baseAgents={baseAgents}
+      />
+
+      {/* Master Workflow Modal */}
+      <MasterConfigModal
+        isOpen={masterModalOpen}
+        onClose={() => { setMasterModalOpen(false); setMasterEditAgent(null); }}
+        editAgent={masterEditAgent}
+        allAgents={agents}
+        onSaved={(saved) => {
+          fetchAgents();
+          onAgentChange(saved.agent_id);
+          setMasterModalOpen(false);
+          setMasterEditAgent(null);
+        }}
       />
     </>
   );
