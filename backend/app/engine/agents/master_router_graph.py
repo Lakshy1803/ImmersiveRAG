@@ -98,25 +98,20 @@ User query: {question}"""
             temperature=0.1,
         )
         raw = response.choices[0].message.content.strip()
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        raw = raw.strip()
 
-        # Sanitize literal control chars inside JSON string values.
-        # The LLM sometimes emits actual \n/\t/\r inside string fields,
-        # which is invalid JSON — collapse them to a single space.
-        import re
-        raw = re.sub(r'[\r\n\t]', ' ', raw)
-        raw = re.sub(r'  +', ' ', raw).strip()
-
-        # Layer 3: extract outermost JSON object using brace matching.
-        # Handles preamble text like "Here is my plan: {...}"
+        # Step 1: robustly extract the outermost JSON object.
+        # This completely ignores leading/trailing text and markdown backticks,
+        # preventing truncation bugs if the JSON contains internal backticks.
         start = raw.find('{')
         end = raw.rfind('}')
         if start != -1 and end != -1 and end > start:
             raw = raw[start:end + 1]
+
+        # Step 2: sanitize literal control chars inside JSON string values.
+        # Corporate models often emit actual \n/\t/\r inside string fields.
+        import re
+        raw = re.sub(r'[\r\n\t]', ' ', raw)
+        raw = re.sub(r'  +', ' ', raw).strip()
 
         # Layer 4: replace Python literals that are invalid JSON
         # Corporate/older LLMs often output None, True, False instead of null, true, false
