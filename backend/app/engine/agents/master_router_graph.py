@@ -109,7 +109,14 @@ User query: {question}"""
         # which is invalid JSON — collapse them to a single space.
         import re
         raw = re.sub(r'[\r\n\t]', ' ', raw)
-        raw = re.sub(r'  +', ' ', raw)
+        raw = re.sub(r'  +', ' ', raw).strip()
+
+        # Layer 3: extract outermost JSON object using brace matching.
+        # Handles preamble text like "Here is my plan: {...}"
+        start = raw.find('{')
+        end = raw.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            raw = raw[start:end + 1]
 
         result = json.loads(raw)
 
@@ -120,7 +127,7 @@ User query: {question}"""
 
         return result
     except Exception as e:
-        logger.warning(f"Planner failed: {e}. Falling back to single sub_agent step.")
+        logger.warning(f"Planner failed: {e}. Raw snippet: {locals().get('raw','')[:300]!r}. Using fallback.")
         return {
             "needs_clarification": False,
             "steps": [{
